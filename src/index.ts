@@ -4,6 +4,10 @@ import chalk from 'chalk';
 import { initProject, findProjectRoot, readProjectConfig } from './storage/project.js';
 import { connectAgent, switchAgent } from './agents/registry.js';
 import { addMessage, loadContext } from './context/store.js';
+import { executeChat, initializeProviders } from './providers/manager.js';
+import { providerRegistry } from './providers/registry.js';
+
+initializeProviders();
 
 const program = new Command();
 program.name('agentmesh').description('Provider-agnostic multi-agent orchestration for the terminal').version('0.2.0');
@@ -40,13 +44,21 @@ program.command('switch <agent>').description('Switch the active agent').action(
   console.log(chalk.green(`✓ Active agent: ${active.name}`));
 });
 
-program.command('chat <message>').description('Append a user message to shared project context').action((message: string) => {
+program.command('providers').description('List available provider adapters').action(() => {
+  for (const provider of providerRegistry.list()) console.log(`• ${provider}`);
+});
+
+program.command('chat <message>').option('-p, --provider <provider>', 'Provider adapter to execute', 'mock').description('Send a message through a provider and persist shared context').action(async (message: string, options) => {
   const root = findProjectRoot(process.cwd());
   if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
   const config = readProjectConfig(root);
   if (!config.activeAgent) throw new Error('No active agent. Run: agentmesh connect <provider>');
   addMessage({ role: 'user', content: message, agentId: config.activeAgent });
-  console.log(chalk.green('✓ Message saved to shared context'));
+  const history = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
+  const response = await executeChat(options.provider, history as any);
+  addMessage({ role: 'agent', content: response.content, agentId: config.activeAgent });
+  console.log(chalk.green('✓ Message processed'));
+  console.log(chalk.bold(response.content));
 });
 
 program.command('history').description('Show shared project context').action(() => {
