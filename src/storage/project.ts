@@ -1,11 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
-
-export interface AgentRecord {
-  id: string;
-  name: string;
-  provider: string;
-}
+import fs from 'node:fs';
+import path from 'node:path';
+import type { AgentRecord } from '../agents/types.js';
 
 export interface ProjectConfig {
   version: number;
@@ -15,22 +10,18 @@ export interface ProjectConfig {
   agents: AgentRecord[];
 }
 
-const DIR = ".agentmesh";
-const CONFIG = "project.json";
+const DIR = '.agentmesh';
+const CONFIG = 'project.json';
 
 export function initProject(name?: string): string {
   const cwd = process.cwd();
   const root = name ? path.resolve(cwd, name) : cwd;
   const meshDir = path.join(root, DIR);
   const configPath = path.join(meshDir, CONFIG);
+  if (fs.existsSync(configPath)) throw new Error(`AgentMesh project already exists at ${root}`);
 
-  if (fs.existsSync(configPath)) {
-    throw new Error(`AgentMesh project already exists at ${root}`);
-  }
-
-  fs.mkdirSync(meshDir, { recursive: true });
-  fs.mkdirSync(path.join(meshDir, "sessions"), { recursive: true });
-  fs.mkdirSync(path.join(meshDir, "memory"), { recursive: true });
+  fs.mkdirSync(path.join(meshDir, 'sessions'), { recursive: true });
+  fs.mkdirSync(path.join(meshDir, 'memory'), { recursive: true });
 
   const config: ProjectConfig = {
     version: 1,
@@ -40,8 +31,8 @@ export function initProject(name?: string): string {
     agents: []
   };
 
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
-  fs.writeFileSync(path.join(meshDir, "README.md"), "# AgentMesh project data\n");
+  writeProjectConfig(root, config);
+  fs.writeFileSync(path.join(meshDir, 'README.md'), '# AgentMesh project data\n');
   return root;
 }
 
@@ -56,6 +47,9 @@ export function findProjectRoot(start: string): string | null {
 }
 
 export function readProjectConfig(root: string): ProjectConfig {
-  const file = path.join(root, DIR, CONFIG);
-  return JSON.parse(fs.readFileSync(file, "utf8")) as ProjectConfig;
+  return JSON.parse(fs.readFileSync(path.join(root, DIR, CONFIG), 'utf8')) as ProjectConfig;
+}
+
+export function writeProjectConfig(root: string, config: ProjectConfig): void {
+  fs.writeFileSync(path.join(root, DIR, CONFIG), JSON.stringify(config, null, 2) + '\n');
 }
