@@ -1,5 +1,5 @@
 import { readProjectConfig, findProjectRoot } from '../storage/project.js';
-import type { AgentRecord } from '../agents/types.js';
+import type { AgentRecord, AgentRole } from '../agents/types.js';
 import { addMessage, loadContext } from '../context/store.js';
 import { executeChat } from '../providers/manager.js';
 import type { ProviderMessage } from '../providers/types.js';
@@ -9,14 +9,30 @@ export interface OrchestrationResult {
   content: string;
 }
 
-function resolveAgents(selectors?: string[]): AgentRecord[] {
+function taskRoles(task: string): AgentRole[] {
+  const text = task.toLowerCase();
+  const roles: AgentRole[] = [];
+  if (/research|investigate|compare|find|study/.test(text)) roles.push('researcher');
+  if (/architect|design|structure|system|architecture/.test(text)) roles.push('architect');
+  if (/build|implement|code|develop|fix/.test(text)) roles.push('developer');
+  if (/review|improve|quality|audit/.test(text)) roles.push('reviewer');
+  if (/test|bug|verify|validate/.test(text)) roles.push('tester');
+  return roles;
+}
+
+function resolveAgents(selectors?: string[], task?: string): AgentRecord[] {
   const root = findProjectRoot(process.cwd());
   if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
 
   const config = readProjectConfig(root);
   if (!selectors?.length) {
     if (!config.agents.length) throw new Error('No agents connected. Run: agentmesh connect <provider>');
-    return config.agents;
+    const preferredRoles = task ? taskRoles(task) : [];
+    if (!preferredRoles.length) return config.agents;
+
+    const routed = config.agents.filter(agent => agent.role && preferredRoles.includes(agent.role));
+    const general = config.agents.filter(agent => !agent.role || agent.role === 'general');
+    return routed.length ? [...routed, ...general] : config.agents;
   }
 
   const agents = selectors.map(selector => {
@@ -36,7 +52,7 @@ function toProviderHistory(): ProviderMessage[] {
 }
 
 export async function orchestrate(task: string, selectors?: string[]): Promise<OrchestrationResult[]> {
-  const agents = resolveAgents(selectors);
+  const agents = resolveAgents(selectors, task);
   const results: OrchestrationResult[] = [];
 
   addMessage({ role: 'user', content: `Orchestration task: ${task}` });
@@ -48,10 +64,10 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
       : '(No previous agent output.)';
 
     const prompt = [
-      `You are agent "${agent.name}" in an AgentMesh collaboration.`,
+      `You are agent "${agent.name}" with the role "${agent.role ?? "general"}" in an AgentMesh collaboration.`,
       `Task: ${task}`,
       `You are stage ${index + 1} of ${agents.length}.`,
-      'Review the shared context and previous agent output, then contribute a useful next step.',
+      'Focus on responsibilities appropriate to your role. Review the shared context and previous agent output, then contribute a useful next step.'
       `Previous agent output:\n${previous}`
     ].join('\n\n');
 
