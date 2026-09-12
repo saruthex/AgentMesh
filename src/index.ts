@@ -8,6 +8,7 @@ import { executeChat, initializeProviders } from './providers/manager.js';
 import { providerRegistry } from './providers/registry.js';
 import { providerAuthStatus, supportedAuthProviders } from './providers/auth.js';
 import type { ProviderMessage } from './providers/types.js';
+import { orchestrate } from './collaboration/orchestrator.js';
 
 initializeProviders();
 
@@ -86,6 +87,22 @@ program.command('chat <message>')
 
     console.log(chalk.green('✓ Message processed'));
     console.log(chalk.bold(response.content));
+  });
+
+program.command('swarm <task>')
+  .option('-a, --agents <agents>', 'Comma-separated agent names or IDs')
+  .description('Run a task through multiple agents sequentially using shared context')
+  .action(async (task: string, options) => {
+    const selectors = options.agents
+      ? String(options.agents).split(',').map((value: string) => value.trim()).filter(Boolean)
+      : undefined;
+
+    const results = await orchestrate(task, selectors);
+    console.log(chalk.green(`✓ Orchestration completed with ${results.length} agent(s)`));
+    for (const result of results) {
+      console.log(chalk.cyan(`\n[${result.agent.name}]`));
+      console.log(result.content);
+    }
   });
 
 program.command('history').description('Show shared project context').action(() => {
