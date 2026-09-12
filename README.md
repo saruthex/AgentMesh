@@ -18,6 +18,7 @@ agentmesh switch <agent>
 agentmesh providers
 agentmesh auth
 agentmesh chat <message>
+agentmesh plan <task>
 agentmesh swarm <task>
 agentmesh swarm <task> --agents agent-a,agent-b
 agentmesh history
@@ -44,6 +45,16 @@ Available roles:
 - `tester`
 
 When you run `agentmesh swarm <task>` without explicitly selecting agents, AgentMesh can prioritize agents whose roles match the task. For example, architecture tasks prioritize `architect` agents and review tasks prioritize `reviewer` agents.
+
+## Workflow planning
+
+AgentMesh can inspect a task and create a role-based workflow before execution:
+
+```bash
+agentmesh plan "Analyze and review the AgentMesh architecture"
+```
+
+The planner selects available specialist roles that match the task. A planned workflow can then be executed with `agentmesh swarm <task>`.
 
 ## Multi-agent orchestration
 
