@@ -4,6 +4,7 @@ import { addMessage, loadContext } from '../context/store.js';
 import { executeChat } from '../providers/manager.js';
 import type { ProviderMessage } from '../providers/types.js';
 import { planWorkflow } from './workflow.js';
+import { buildCollaborationContext } from './context.js';
 
 export interface OrchestrationResult {
   agent: AgentRecord;
@@ -44,14 +45,13 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
   const agents = workflow.flatMap(step => resolvedAgents.filter(agent => (agent.role ?? 'general') === step.role));
   const runnableAgents = agents.length ? agents : resolvedAgents;
   const results: OrchestrationResult[] = [];
+  const initialHistory = toProviderHistory();
 
   addMessage({ role: 'user', content: `Orchestration task: ${task}` });
 
   for (let index = 0; index < runnableAgents.length; index++) {
     const agent = runnableAgents[index];
-    const previous = results.length
-      ? results.map(result => `[${result.agent.name}] ${result.content}`).join('\n')
-      : '(No previous agent output.)';
+    const previous = buildCollaborationContext(results);
 
     const prompt = [
       `You are agent "${agent.name}" with the role "${agent.role ?? "general"}" in an AgentMesh collaboration.`,
@@ -62,7 +62,7 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
     ].join('\n\n');
 
     const history: ProviderMessage[] = [
-      ...toProviderHistory(),
+      ...initialHistory,
       { role: 'user', content: prompt }
     ];
 
