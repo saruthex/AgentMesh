@@ -10,30 +10,14 @@ export interface OrchestrationResult {
   content: string;
 }
 
-function taskRoles(task: string): AgentRole[] {
-  const text = task.toLowerCase();
-  const roles: AgentRole[] = [];
-  if (/research|investigate|compare|find|study/.test(text)) roles.push('researcher');
-  if (/architect|design|structure|system|architecture/.test(text)) roles.push('architect');
-  if (/build|implement|code|develop|fix/.test(text)) roles.push('developer');
-  if (/review|improve|quality|audit/.test(text)) roles.push('reviewer');
-  if (/test|bug|verify|validate/.test(text)) roles.push('tester');
-  return roles;
-}
-
-function resolveAgents(selectors?: string[], task?: string): AgentRecord[] {
+function resolveAgents(selectors?: string[]): AgentRecord[] {
   const root = findProjectRoot(process.cwd());
   if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
 
   const config = readProjectConfig(root);
   if (!selectors?.length) {
     if (!config.agents.length) throw new Error('No agents connected. Run: agentmesh connect <provider>');
-    const preferredRoles = task ? taskRoles(task) : [];
-    if (!preferredRoles.length) return config.agents;
-
-    const routed = config.agents.filter(agent => agent.role && preferredRoles.includes(agent.role));
-    const general = config.agents.filter(agent => !agent.role || agent.role === 'general');
-    return routed.length ? [...routed, ...general] : config.agents;
+    return config.agents;
   }
 
   const agents = selectors.map(selector => {
@@ -53,7 +37,7 @@ function toProviderHistory(): ProviderMessage[] {
 }
 
 export async function orchestrate(task: string, selectors?: string[]): Promise<OrchestrationResult[]> {
-  const resolvedAgents = resolveAgents(selectors, task);
+  const resolvedAgents = resolveAgents(selectors);
   const workflow = selectors?.length
     ? resolvedAgents.map(agent => ({ role: (agent.role ?? 'general') as AgentRole, objective: 'Contribute to the task according to your role.' }))
     : planWorkflow(task, resolvedAgents);
