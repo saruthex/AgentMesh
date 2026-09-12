@@ -72,7 +72,9 @@ Run them as a sequential collaboration:
 agentmesh swarm "Analyze this project and suggest the next improvements"
 ```
 
-Each stage receives the shared project context plus previous agent output. Collaboration context is bounded so long-running swarms do not endlessly duplicate the full history. Responses are persisted into AgentMesh shared memory for later agents and future commands.\n\nBy default, `swarm` also asks a final agent to synthesize the team contributions into one practical answer. Use `--no-synthesize` to inspect only the individual contributions.
+Each stage receives the shared project context plus previous agent output. Collaboration context is bounded so long-running swarms do not endlessly duplicate the full history. Responses are persisted into AgentMesh shared memory for later agents and future commands.
+
+By default, `swarm` also asks a final agent to synthesize the team contributions into one practical answer. Use `--no-synthesize` to inspect only the individual contributions.
 
 ## Provider authentication
 
