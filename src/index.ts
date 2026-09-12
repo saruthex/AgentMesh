@@ -10,6 +10,7 @@ import { providerRegistry } from './providers/registry.js';
 import { providerAuthStatus, supportedAuthProviders } from './providers/auth.js';
 import type { ProviderMessage } from './providers/types.js';
 import { orchestrate } from './collaboration/orchestrator.js';
+import { workflowSummary } from './collaboration/workflow.js';
 
 initializeProviders();
 
@@ -90,6 +91,18 @@ program.command('chat <message>')
 
     console.log(chalk.green('✓ Message processed'));
     console.log(chalk.bold(response.content));
+  });
+
+program.command('plan <task>')
+  .description('Show the role-based workflow AgentMesh would use for a task')
+  .action((task: string) => {
+    const root = findProjectRoot(process.cwd());
+    if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
+    const config = readProjectConfig(root);
+    const steps = workflowSummary(task, config.agents);
+    console.log(chalk.bold('AgentMesh workflow plan'));
+    console.log(chalk.gray(`Task: ${task}`));
+    for (const step of steps) console.log(`• ${step}`);
   });
 
 program.command('swarm <task>')
