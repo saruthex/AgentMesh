@@ -2,7 +2,8 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { initProject, findProjectRoot, readProjectConfig } from './storage/project.js';
-import { connectAgent, switchAgent } from './agents/registry.js';
+import { connectAgent, switchAgent, agentRoles } from './agents/registry.js';
+import type { AgentRole } from './agents/types.js';
 import { addMessage, loadContext } from './context/store.js';
 import { executeChat, initializeProviders } from './providers/manager.js';
 import { providerRegistry } from './providers/registry.js';
@@ -21,14 +22,16 @@ program.command('init [name]').description('Create an AgentMesh project').action
   console.log(chalk.cyan(root));
 });
 
-program.command('connect <provider>').option('-n, --name <name>').option('-m, --model <model>')
+program.command('connect <provider>').option('-n, --name <name>').option('-m, --model <model>').option('-r, --role <role>', `Agent role: ${agentRoles.join(', ')}`)
   .description('Register an AI provider agent with this project')
   .action((provider: string, options) => {
     const supported = [...providerRegistry.list(), 'custom'];
     if (!supported.includes(provider)) {
       throw new Error(`Unsupported provider. Use: ${supported.join(', ')}`);
     }
-    const agent = connectAgent(provider, options.name, options.model);
+    const role = (options.role ?? 'general') as AgentRole;
+    if (!agentRoles.includes(role)) throw new Error(`Invalid role: ${role}. Use: ${agentRoles.join(', ')}`);
+    const agent = connectAgent(provider, options.name, options.model, role);
     console.log(chalk.green(`✓ Connected ${agent.name}`));
     console.log(`ID: ${agent.id}`);
   });
@@ -40,7 +43,7 @@ program.command('agents').description('List connected agents').action(() => {
   if (!config.agents.length) return console.log(chalk.yellow('No agents connected yet.'));
   for (const agent of config.agents) {
     const active = config.activeAgent === agent.id ? chalk.green(' ● active') : '';
-    console.log(`• ${agent.name} [${agent.provider}]${agent.model ? ` - ${agent.model}` : ''}${active}`);
+    console.log(`• ${agent.name} [${agent.provider}] (${agent.role ?? 'general'})${agent.model ? ` - ${agent.model}` : ''}${active}`);
   }
 });
 
