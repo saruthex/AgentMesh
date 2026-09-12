@@ -11,6 +11,7 @@ import { providerAuthStatus, supportedAuthProviders } from './providers/auth.js'
 import type { ProviderMessage } from './providers/types.js';
 import { orchestrate } from './collaboration/orchestrator.js';
 import { workflowSummary } from './collaboration/workflow.js';
+import { synthesizeResults } from './collaboration/synthesis.js';
 
 initializeProviders();
 
@@ -107,6 +108,7 @@ program.command('plan <task>')
 
 program.command('swarm <task>')
   .option('-a, --agents <agents>', 'Comma-separated agent names or IDs')
+  .option('--no-synthesize', 'Skip the final combined answer')
   .description('Run a task through multiple agents sequentially using shared context')
   .action(async (task: string, options) => {
     const selectors = options.agents
@@ -118,6 +120,14 @@ program.command('swarm <task>')
     for (const result of results) {
       console.log(chalk.cyan(`\n[${result.agent.name}]`));
       console.log(result.content);
+    }
+
+    if (options.synthesize) {
+      const finalAnswer = await synthesizeResults(task, results);
+      if (finalAnswer) {
+        console.log(chalk.green('\n✓ Final synthesis'));
+        console.log(chalk.bold(finalAnswer));
+      }
     }
   });
 
