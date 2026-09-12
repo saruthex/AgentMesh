@@ -12,7 +12,7 @@ Connect multiple AI providers, keep project context independent from any single 
 
 ```bash
 agentmesh init [name]
-agentmesh connect <provider> --name <name> --model <model>
+agentmesh connect <provider> --name <name> --model <model> --role <role>
 agentmesh agents
 agentmesh switch <agent>
 agentmesh providers
@@ -23,6 +23,27 @@ agentmesh swarm <task> --agents agent-a,agent-b
 agentmesh history
 agentmesh status
 ```
+
+## Agent roles and routing
+
+Agents can be assigned a role when connected:
+
+```bash
+agentmesh connect custom --name researcher --role researcher
+agentmesh connect custom --name architect --role architect
+agentmesh connect custom --name reviewer --role reviewer
+```
+
+Available roles:
+
+- `general`
+- `researcher`
+- `architect`
+- `developer`
+- `reviewer`
+- `tester`
+
+When you run `agentmesh swarm <task>` without explicitly selecting agents, AgentMesh can prioritize agents whose roles match the task. For example, architecture tasks prioritize `architect` agents and review tasks prioritize `reviewer` agents.
 
 ## Multi-agent orchestration
 
