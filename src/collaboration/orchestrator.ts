@@ -67,7 +67,7 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
       `You are agent "${agent.name}" with the role "${agent.role ?? "general"}" in an AgentMesh collaboration.`,
       `Task: ${task}`,
       `You are stage ${index + 1} of ${agents.length}.`,
-      'Focus on responsibilities appropriate to your role. Review the shared context and previous agent output, then contribute a useful next step.'
+      'Focus on responsibilities appropriate to your role. Review the shared context and previous agent output, then contribute a useful next step.',
       `Previous agent output:\n${previous}`
     ].join('\n\n');
 
