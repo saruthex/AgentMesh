@@ -6,11 +6,13 @@ import { connectAgent, switchAgent } from './agents/registry.js';
 import { addMessage, loadContext } from './context/store.js';
 import { executeChat, initializeProviders } from './providers/manager.js';
 import { providerRegistry } from './providers/registry.js';
+import { providerAuthStatus, supportedAuthProviders } from './providers/auth.js';
+import type { ProviderMessage } from './providers/types.js';
 
 initializeProviders();
 
 const program = new Command();
-program.name('agentmesh').description('Provider-agnostic multi-agent orchestration for the terminal').version('0.2.0');
+program.name('agentmesh').description('Provider-agnostic multi-agent orchestration for the terminal').version('0.3.0');
 
 program.command('init [name]').description('Create an AgentMesh project').action((name?: string) => {
   const root = initProject(name);
@@ -21,8 +23,10 @@ program.command('init [name]').description('Create an AgentMesh project').action
 program.command('connect <provider>').option('-n, --name <name>').option('-m, --model <model>')
   .description('Register an AI provider agent with this project')
   .action((provider: string, options) => {
-    const supported = ['openai', 'anthropic', 'gemini', 'custom'];
-    if (!supported.includes(provider)) throw new Error('Unsupported provider. Use: openai, anthropic, gemini, or custom');
+    const supported = [...providerRegistry.list(), 'custom'];
+    if (!supported.includes(provider)) {
+      throw new Error(`Unsupported provider. Use: ${supported.join(', ')}`);
+    }
     const agent = connectAgent(provider, options.name, options.model);
     console.log(chalk.green(`✓ Connected ${agent.name}`));
     console.log(`ID: ${agent.id}`);
@@ -48,18 +52,41 @@ program.command('providers').description('List available provider adapters').act
   for (const provider of providerRegistry.list()) console.log(`• ${provider}`);
 });
 
-program.command('chat <message>').option('-p, --provider <provider>', 'Provider adapter to execute', 'mock').description('Send a message through a provider and persist shared context').action(async (message: string, options) => {
-  const root = findProjectRoot(process.cwd());
-  if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
-  const config = readProjectConfig(root);
-  if (!config.activeAgent) throw new Error('No active agent. Run: agentmesh connect <provider>');
-  addMessage({ role: 'user', content: message, agentId: config.activeAgent });
-  const history = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
-  const response = await executeChat(options.provider, history as any);
-  addMessage({ role: 'agent', content: response.content, agentId: config.activeAgent });
-  console.log(chalk.green('✓ Message processed'));
-  console.log(chalk.bold(response.content));
+program.command('auth').description('Show provider authentication readiness without exposing secrets').action(() => {
+  for (const provider of supportedAuthProviders()) {
+    const ready = providerAuthStatus(provider);
+    console.log(`${ready ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${ready ? 'API key available' : 'API key missing'}`);
+  }
 });
+
+program.command('chat <message>')
+  .option('-p, --provider <provider>', 'Override the active agent provider')
+  .description('Send a message through the active provider and persist shared context')
+  .action(async (message: string, options) => {
+    const root = findProjectRoot(process.cwd());
+    if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
+
+    const config = readProjectConfig(root);
+    if (!config.activeAgent) throw new Error('No active agent. Run: agentmesh connect <provider>');
+
+    const activeAgent = config.agents.find(agent => agent.id === config.activeAgent);
+    if (!activeAgent) throw new Error('Active agent configuration is invalid.');
+
+    const providerId = options.provider ?? activeAgent.provider;
+    const resolvedProvider = providerId === 'custom' ? 'mock' : providerId;
+
+    addMessage({ role: 'user', content: message, agentId: activeAgent.id });
+    const history: ProviderMessage[] = loadContext().map(item => ({
+      role: item.role === 'agent' ? 'assistant' : item.role,
+      content: item.content
+    }));
+
+    const response = await executeChat(resolvedProvider, history, activeAgent.model);
+    addMessage({ role: 'agent', content: response.content, agentId: activeAgent.id });
+
+    console.log(chalk.green('✓ Message processed'));
+    console.log(chalk.bold(response.content));
+  });
 
 program.command('history').description('Show shared project context').action(() => {
   const messages = loadContext();
