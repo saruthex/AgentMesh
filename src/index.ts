@@ -5,6 +5,8 @@ import { initProject, findProjectRoot, readProjectConfig } from './storage/proje
 import { connectAgent, switchAgent } from './agents/registry.js';
 import { addMessage, loadContext } from './context/store.js';
 
+initializeProviders();
+
 const program = new Command();
 program.name('agentmesh').description('Provider-agnostic multi-agent orchestration for the terminal').version('0.2.0');
 
