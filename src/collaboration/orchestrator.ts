@@ -37,6 +37,10 @@ function toProviderHistory(): ProviderMessage[] {
   }));
 }
 
+function providerFor(agent: AgentRecord): string {
+  return agent.provider === 'custom' ? 'mock' : agent.provider;
+}
+
 export async function orchestrate(task: string, selectors?: string[]): Promise<OrchestrationResult[]> {
   const resolvedAgents = resolveAgents(selectors);
   const workflow = selectors?.length
@@ -45,16 +49,14 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
   const agents = workflow.flatMap(step => resolvedAgents.filter(agent => (agent.role ?? 'general') === step.role));
   const runnableAgents = agents.length ? agents : resolvedAgents;
   const results: OrchestrationResult[] = [];
-  const initialHistory = toProviderHistory();
 
   addMessage({ role: 'user', content: `Orchestration task: ${task}` });
 
   for (let index = 0; index < runnableAgents.length; index++) {
     const agent = runnableAgents[index];
     const previous = buildCollaborationContext(results);
-
     const prompt = [
-      `You are agent "${agent.name}" with the role "${agent.role ?? "general"}" in an AgentMesh collaboration.`,
+      `You are agent "${agent.name}" with the role "${agent.role ?? 'general'}" in an AgentMesh collaboration.`,
       `Task: ${task}`,
       `You are stage ${index + 1} of ${runnableAgents.length}.`,
       'Focus on responsibilities appropriate to your role. Review the shared context and previous agent output, then contribute a useful next step.',
@@ -62,15 +64,20 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
     ].join('\n\n');
 
     const history: ProviderMessage[] = [
-      ...initialHistory,
+      ...toProviderHistory(),
       { role: 'user', content: prompt }
     ];
 
-    const provider = agent.provider === 'custom' ? 'mock' : agent.provider;
-    const response = await executeChat(provider, history, agent.model);
-
-    addMessage({ role: 'agent', content: response.content, agentId: agent.id });
-    results.push({ agent, content: response.content });
+    try {
+      const response = await executeChat(providerFor(agent), history, { model: agent.model });
+      addMessage({ role: 'agent', content: response.content, agentId: agent.id });
+      results.push({ agent, content: response.content });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const content = `Agent "${agent.name}" failed: ${message}`;
+      addMessage({ role: 'agent', content, agentId: agent.id });
+      results.push({ agent, content });
+    }
   }
 
   return results;
