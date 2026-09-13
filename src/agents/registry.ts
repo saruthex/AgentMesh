@@ -1,7 +1,9 @@
-import { AgentRecord } from './types.js';
+import { AgentRecord, AgentRole } from './types.js';
 import { findProjectRoot, readProjectConfig, writeProjectConfig } from '../storage/project.js';
 
-export function connectAgent(provider: string, name?: string, model?: string): AgentRecord {
+export const agentRoles: AgentRole[] = ['general', 'researcher', 'architect', 'developer', 'reviewer', 'tester'];
+
+export function connectAgent(provider: string, name?: string, model?: string, role: AgentRole = 'general'): AgentRecord {
   const root = findProjectRoot(process.cwd());
   if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
   const config = readProjectConfig(root);
@@ -10,6 +12,7 @@ export function connectAgent(provider: string, name?: string, model?: string): A
     name: name ?? provider,
     provider,
     model,
+    role,
     createdAt: new Date().toISOString()
   };
   config.agents.push(agent);
