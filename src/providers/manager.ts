@@ -3,7 +3,7 @@ import { GeminiOAuthAdapter } from './gemini-oauth.js';
 import { GeminiProviderAdapter } from './gemini.js';
 import { MockProviderAdapter } from './mock.js';
 import { OpenAIProviderAdapter } from './openai.js';
-import { executeAccountCli, accountCliInstalled } from './account-cli.js';
+import { executeAccountCli, accountCliAuthenticated } from './account-cli.js';
 import { providerRegistry } from './registry.js';
 import { loginRegistry } from './login-registry.js';
 import type { ChatResponse, ProviderMessage } from './types.js';
@@ -37,7 +37,7 @@ function wait(ms: number): Promise<void> {
 
 function canUseAccountCli(providerId: string): boolean {
   if (providerId !== 'openai' && providerId !== 'anthropic') return false;
-  try { return accountCliInstalled(providerId); } catch { return false; }
+  try { return accountCliAuthenticated(providerId); } catch { return false; }
 }
 
 export async function executeChat(
@@ -51,9 +51,10 @@ export async function executeChat(
     try {
       return await executeAccountCli(providerId, messages, options.model);
     } catch (error) {
-      if (options.authMode === 'account') throw error;
       const message = error instanceof Error ? error.message : String(error);
-      if (/login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) throw error;
+      if (options.authMode === 'account' || /login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) {
+        throw error;
+      }
     }
   }
 
