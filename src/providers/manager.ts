@@ -47,6 +47,11 @@ export async function executeChat(
 ): Promise<ChatResponse> {
   initializeProviders();
 
+  const provider = providerRegistry.get(providerId);
+  if (!provider) {
+    throw new Error(`Provider adapter not configured: ${providerId}. Available adapters: ${providerRegistry.list().join(', ')}`);
+  }
+
   const authMode = options.authMode ?? 'auto';
   const accountCapable = canUseAccountCli(providerId);
 
@@ -63,11 +68,6 @@ export async function executeChat(
 
   if (authMode === 'account') {
     throw new Error(`Provider "${providerId}" has no authenticated account CLI available. Run \`agentmesh auth\` to check account readiness, then \`agentmesh login ${providerId}\` for supported account login.`);
-  }
-
-  const provider = providerRegistry.get(providerId);
-  if (!provider) {
-    throw new Error(`Provider adapter not configured: ${providerId}. Available adapters: ${providerRegistry.list().join(', ')}`);
   }
 
   const retries = options.retries ?? 1;
