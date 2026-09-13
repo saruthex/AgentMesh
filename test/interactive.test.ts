@@ -1,19 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { initProject } from '../src/storage/project.js';
 import { COMMANDS, parseInteractiveInput, runInteractiveCommand } from '../src/interactive.js';
 
-function withTempProject(run: (root: string) => Promise<void>): Promise<void> {
+async function withTempProject(run: (root: string) => Promise<void>): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'agentmesh-interactive-'));
-  writeFileSync(join(root, '.agentmesh.json'), JSON.stringify({ name: 'interactive-test', agents: [], activeAgent: null }, null, 2));
   const previous = process.cwd();
-  process.chdir(root);
-  return run(root).finally(() => {
+  try {
+    process.chdir(root);
+    const project = initProject('interactive-test');
+    process.chdir(project);
+    await run(project);
+  } finally {
     process.chdir(previous);
     rmSync(root, { recursive: true, force: true });
-  });
+  }
 }
 
 test('interactive mode exposes the AI-first command set', () => {
