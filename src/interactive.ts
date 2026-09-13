@@ -1,4 +1,4 @@
-import { createInterface } from 'node:readline';
+import { createInterface, type Interface } from 'node:readline';
 import chalk from 'chalk';
 import { findProjectRoot, readProjectConfig } from './storage/project.js';
 import { agentRoles, connectAgent, switchAgent } from './agents/registry.js';
@@ -79,36 +79,32 @@ function help(): void {
   console.log(chalk.gray('\nAll non-interactive commands remain available: agentmesh <command> ...\n'));
 }
 
-async function interactiveChat(): Promise<void> {
+async function interactiveChat(rl: Interface): Promise<void> {
   const config = readProjectConfig(requireProject());
   if (!config.activeAgent) throw new Error('No active agent. Connect one first.');
   const agent = config.agents.find(item => item.id === config.activeAgent);
   if (!agent) throw new Error('Active agent configuration is invalid.');
 
   console.log(chalk.gray(`Chatting with ${agent.name}. Type /exit to return to the main prompt.`));
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const ask = (question: string) => new Promise<string>(resolve => rl.question(question, resolve));
-  try {
-    while (true) {
-      const message = (await ask(chalk.green('you> '))).trim();
-      if (message === '/exit' || message === '/quit') break;
-      if (!message) continue;
-      const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
-      try {
-        const resolvedProvider = agent.provider === 'custom' ? 'mock' : agent.provider;
-        const authMode = resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
-        addMessage({ role: 'user', content: message, agentId: agent.id });
-        const response = await executeChat(resolvedProvider, [...history, { role: 'user', content: message }], { model: agent.model, authMode });
-        addMessage({ role: 'agent', content: response.content, agentId: agent.id });
-        console.log(`\n${chalk.cyan(agent.name)}> ${response.content}\n`);
-      } catch (error) {
-        console.log(chalk.red(`✗ ${error instanceof Error ? error.message : String(error)}`));
-      }
+  while (true) {
+    const message = (await new Promise<string>(resolve => rl.question(chalk.green('you> '), resolve))).trim();
+    if (message === '/exit' || message === '/quit') break;
+    if (!message) continue;
+    const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
+    try {
+      const resolvedProvider = agent.provider === 'custom' ? 'mock' : agent.provider;
+      const authMode = resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
+      addMessage({ role: 'user', content: message, agentId: agent.id });
+      const response = await executeChat(resolvedProvider, [...history, { role: 'user', content: message }], { model: agent.model, authMode });
+      addMessage({ role: 'agent', content: response.content, agentId: agent.id });
+      console.log(`\n${chalk.cyan(agent.name)}> ${response.content}\n`);
+    } catch (error) {
+      console.log(chalk.red(`✗ ${error instanceof Error ? error.message : String(error)}`));
     }
-  } finally { rl.close(); }
+  }
 }
 
-export async function runInteractiveCommand(input: string, root: string): Promise<boolean> {
+export async function runInteractiveCommand(input: string, root: string, rl?: Interface): Promise<boolean> {
   const parts = parseInteractiveInput(input);
   const [command, ...args] = parts;
   if (!command) return true;
@@ -147,7 +143,10 @@ export async function runInteractiveCommand(input: string, root: string): Promis
       console.log(chalk.green(`✓ Active agent: ${active.name}`));
       return true;
     }
-    case 'chat': await interactiveChat(); return true;
+    case 'chat':
+      if (!rl) throw new Error('Interactive chat is only available from the interactive workspace.');
+      await interactiveChat(rl);
+      return true;
     case 'plan': {
       const task = args.join(' ').trim();
       if (!task) { console.log('Usage: plan <task>'); return true; }
@@ -195,7 +194,7 @@ export async function startInteractiveMode(): Promise<void> {
   try {
     while (running) {
       const line = await new Promise<string>(resolve => rl.question(chalk.green('agentmesh> '), resolve));
-      try { running = await runInteractiveCommand(line, root); }
+      try { running = await runInteractiveCommand(line, root, rl); }
       catch (error) { console.log(chalk.red(`✗ ${error instanceof Error ? error.message : String(error)}`)); }
     }
   } finally { rl.off('SIGINT', onSigint); rl.close(); }
