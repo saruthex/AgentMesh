@@ -2,7 +2,14 @@ import { executeChat } from '../providers/manager.js';
 import type { ProviderMessage } from '../providers/types.js';
 import type { OrchestrationResult } from './orchestrator.js';
 
-export async function synthesizeResults(task: string, results: OrchestrationResult[]): Promise<string | undefined> {
+type AuthMode = 'account' | 'api';
+
+function authModeFor(provider: string, requested: AuthMode): AuthMode {
+  if (requested === 'api') return 'api';
+  return provider === 'openai' || provider === 'anthropic' ? 'account' : 'api';
+}
+
+export async function synthesizeResults(task: string, results: OrchestrationResult[], requestedAuthMode: AuthMode = 'account'): Promise<string | undefined> {
   const successfulResults = results.filter(result => result.success);
   if (!successfulResults.length) return undefined;
 
@@ -27,7 +34,6 @@ export async function synthesizeResults(task: string, results: OrchestrationResu
     }
   ];
 
-  const authMode = provider === 'openai' || provider === 'anthropic' ? 'account' : 'api';
-  const response = await executeChat(provider, messages, { model: preferred.model, authMode });
+  const response = await executeChat(provider, messages, { model: preferred.model, authMode: authModeFor(provider, requestedAuthMode) });
   return response.content;
 }
