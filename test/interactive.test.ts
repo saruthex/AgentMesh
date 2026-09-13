@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { COMMANDS, parseInteractiveInput, runInteractiveCommand } from '../src/interactive.js';
 
-test('interactive mode exposes the core command set', () => {
+test('interactive mode exposes the AI-first command set', () => {
   assert.ok(COMMANDS.includes('agents'));
   assert.ok(COMMANDS.includes('chat'));
   assert.ok(COMMANDS.includes('swarm'));
@@ -18,10 +18,19 @@ test('interactive parser handles plain commands', () => {
 });
 
 test('interactive exit commands terminate the workspace loop', async () => {
-  assert.equal(await runInteractiveCommand('exit', process.cwd()), false);
-  assert.equal(await runInteractiveCommand('quit', process.cwd()), false);
+  const project = process.cwd();
+  assert.equal(await runInteractiveCommand('/exit', project), false);
+  assert.equal(await runInteractiveCommand('/quit', project), false);
 });
 
-test('interactive unknown commands remain recoverable', async () => {
-  assert.equal(await runInteractiveCommand('not-a-command', process.cwd()), true);
+test('slash commands are recognized case-insensitively', async () => {
+  assert.equal(await runInteractiveCommand('/EXIT', process.cwd()), false);
+});
+
+test('normal text is treated as conversational input and remains recoverable without an active agent', async () => {
+  assert.equal(await runInteractiveCommand('build me a secure login flow', process.cwd()), true);
+});
+
+test('unknown slash commands remain recoverable', async () => {
+  assert.equal(await runInteractiveCommand('/not-a-command', process.cwd()), true);
 });
