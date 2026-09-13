@@ -1,19 +1,19 @@
 import type { AccountAuthCapability } from './account-auth.js';
-import { accountCliInstalled } from './account-cli.js';
+import { accountCliAuthenticated, accountCliProviders } from './account-cli.js';
 
 /**
- * Account sign-in capabilities are resolved at runtime. AgentMesh delegates
- * OpenAI/Anthropic account authentication to their provider-owned CLIs and
- * never reads or copies those CLIs' credential stores.
+ * Resolve account sign-in readiness from provider-owned CLIs at runtime.
+ * AgentMesh never reads or copies provider credential stores.
  */
 export function accountAuthCapabilities(): AccountAuthCapability[] {
   const capabilities: AccountAuthCapability[] = [];
+  const configured = new Set(accountCliProviders());
 
   for (const item of [
     {
       provider: 'openai',
       label: 'ChatGPT / OpenAI',
-      reason: 'Install the official Codex CLI to enable ChatGPT account login from AgentMesh.'
+      reason: 'Install the official Codex CLI, then complete `codex login`, to enable ChatGPT account login.'
     },
     {
       provider: 'anthropic',
@@ -23,7 +23,7 @@ export function accountAuthCapabilities(): AccountAuthCapability[] {
   ]) {
     let available = false;
     try {
-      available = accountCliInstalled(item.provider);
+      available = configured.has(item.provider) && accountCliAuthenticated(item.provider);
     } catch {
       available = false;
     }
