@@ -12,22 +12,21 @@ export interface OrchestrationResult {
   success: boolean;
 }
 
+type AuthMode = 'account' | 'api';
+
 function resolveAgents(selectors?: string[]): AgentRecord[] {
   const root = findProjectRoot(process.cwd());
   if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
-
   const config = readProjectConfig(root);
   if (!selectors?.length) {
     if (!config.agents.length) throw new Error('No agents connected. Run: agentmesh connect <provider>');
     return config.agents;
   }
-
   const agents = selectors.map(selector => {
     const agent = config.agents.find(item => item.id === selector || item.name === selector);
     if (!agent) throw new Error(`Agent not found: ${selector}`);
     return agent;
   });
-
   return [...new Map(agents.map(agent => [agent.id, agent])).values()];
 }
 
@@ -42,7 +41,12 @@ function providerFor(agent: AgentRecord): string {
   return agent.provider === 'custom' ? 'mock' : agent.provider;
 }
 
-export async function orchestrate(task: string, selectors?: string[]): Promise<OrchestrationResult[]> {
+function authModeFor(agent: AgentRecord, requested: AuthMode): AuthMode {
+  if (requested === 'api') return 'api';
+  return agent.provider === 'openai' || agent.provider === 'anthropic' ? 'account' : 'api';
+}
+
+export async function orchestrate(task: string, selectors?: string[], requestedAuthMode: AuthMode = 'account'): Promise<OrchestrationResult[]> {
   const resolvedAgents = resolveAgents(selectors);
   const workflow = selectors?.length
     ? resolvedAgents.map(agent => ({ role: (agent.role ?? 'general') as AgentRole, objective: 'Contribute to the task according to your role.' }))
@@ -63,14 +67,9 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
       'Focus on responsibilities appropriate to your role. Review the shared context and previous successful agent output, then contribute a useful next step.',
       `Previous successful agent output:\n${previous}`
     ].join('\n\n');
-
-    const history: ProviderMessage[] = [
-      ...toProviderHistory(),
-      { role: 'user', content: prompt }
-    ];
-
+    const history: ProviderMessage[] = [...toProviderHistory(), { role: 'user', content: prompt }];
     try {
-      const response = await executeChat(providerFor(agent), history, { model: agent.model, authMode: agent.provider === 'openai' || agent.provider === 'anthropic' ? 'account' : 'api' });
+      const response = await executeChat(providerFor(agent), history, { model: agent.model, authMode: authModeFor(agent, requestedAuthMode) });
       addMessage({ role: 'agent', content: response.content, agentId: agent.id });
       results.push({ agent, content: response.content, success: true });
     } catch (error) {
@@ -80,6 +79,5 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
       results.push({ agent, content, success: false });
     }
   }
-
   return results;
 }
