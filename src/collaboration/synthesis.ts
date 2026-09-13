@@ -27,6 +27,7 @@ export async function synthesizeResults(task: string, results: OrchestrationResu
     }
   ];
 
-  const response = await executeChat(provider, messages, { model: preferred.model, authMode: 'account' });
+  const authMode = provider === 'openai' || provider === 'anthropic' ? 'account' : 'api';
+  const response = await executeChat(provider, messages, { model: preferred.model, authMode });
   return response.content;
 }
