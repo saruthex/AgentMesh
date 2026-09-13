@@ -63,16 +63,20 @@ program.command('providers').description('List available provider adapters').act
 program.command('auth').description('Show provider authentication readiness without exposing secrets').action(() => {
   for (const provider of supportedAuthProviders()) {
     const apiReady = providerAuthStatus(provider);
-    const accountReady = accountLoginProviders().includes(provider) && accountLoginAvailability(provider);
+    const accountConfigured = accountLoginProviders().includes(provider);
+    const accountReady = accountConfigured && accountLoginAvailability(provider);
     const loginReady = loginRegistry.get(provider);
     if (accountReady) {
-      console.log(`${chalk.green('✓')} ${provider}: account CLI available`);
+      console.log(`${chalk.green('✓')} ${provider}: account login ready`);
     } else {
       console.log(`${apiReady ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${apiReady ? 'API key available' : 'API key missing'}${loginReady ? ` | developer login: ${loginReady.methods.join(', ')}` : ''}`);
+      if (accountConfigured) console.log(chalk.gray(`  ${provider}: official account CLI installed, but account login is not completed`));
     }
   }
   for (const provider of accountLoginProviders()) {
-    if (!accountLoginAvailability(provider)) console.log(chalk.gray(`  ${provider}: install its official CLI for account login`));
+    if (!accountLoginAvailability(provider)) {
+      console.log(chalk.gray(`  ${provider}: install its official CLI for account login`));
+    }
   }
 });
 
@@ -88,8 +92,9 @@ program.command('login [provider]')
       if (!target) {
         console.log(chalk.bold('Account sign-in'));
         for (const name of ['openai', 'anthropic', 'gemini']) {
-          const available = accountProviders.includes(name) && accountLoginAvailability(name);
-          console.log(`  ${available ? chalk.green('✓') : chalk.yellow('○')} ${name}: ${available ? 'account login available' : 'account login unavailable'}`);
+          const configured = accountProviders.includes(name);
+          const available = configured && accountLoginAvailability(name);
+          console.log(`  ${available ? chalk.green('✓') : chalk.yellow('○')} ${name}: ${available ? 'account login ready' : configured ? 'official CLI not authenticated' : 'account login unavailable'}`);
         }
         console.log(chalk.gray('\nUsage: agentmesh login openai | anthropic | gemini'));
         console.log(chalk.gray('Gemini account login cannot be delegated through AgentMesh because Google prohibits third-party piggybacking on Gemini CLI OAuth.'));
