@@ -24,6 +24,7 @@ program.command('init [name]').description('Create an AgentMesh project').action
   const root = initProject(name);
   console.log(chalk.green('✓ AgentMesh project created'));
   console.log(chalk.cyan(root));
+  console.log(chalk.gray(`Next: cd "${root}" && agentmesh status`));
 });
 
 program.command('connect <provider>').option('-n, --name <name>').option('-m, --model <model>').option('-r, --role <role>', `Agent role: ${agentRoles.join(', ')}`)
@@ -83,21 +84,37 @@ program.command('login [provider]')
   .action(async (provider: string | undefined, options) => {
     const target = provider ?? listLoginProviders()[0];
     if (!target) throw new Error('No provider login adapters are installed.');
-    const start = await beginLogin(target, options.method);
-    if (!start.authorizationUrl) throw new Error(`Login adapter for ${target} did not return an authorization URL.`);
 
-    console.log(chalk.cyan(`Open this URL to authenticate ${target}:`));
-    console.log(start.authorizationUrl);
+    try {
+      const start = await beginLogin(target, options.method);
+      if (!start.authorizationUrl) throw new Error(`Login adapter for ${target} did not return an authorization URL.`);
 
-    const adapter = loginRegistry.get(target) as { openAuthorizationUrl?: (url: string) => Promise<boolean> } | undefined;
-    if (options.browser !== false && adapter?.openAuthorizationUrl) {
-      const opened = await adapter.openAuthorizationUrl(start.authorizationUrl);
-      console.log(opened ? chalk.green('✓ Authorization URL opened') : chalk.yellow('○ Could not open browser automatically; use the URL above.'));
+      console.log(chalk.cyan(`Open this URL to authenticate ${target}:`));
+      console.log(start.authorizationUrl);
+
+      const adapter = loginRegistry.get(target) as { openAuthorizationUrl?: (url: string) => Promise<boolean> } | undefined;
+      if (options.browser !== false && adapter?.openAuthorizationUrl) {
+        const opened = await adapter.openAuthorizationUrl(start.authorizationUrl);
+        console.log(opened ? chalk.green('✓ Authorization URL opened') : chalk.yellow('○ Could not open browser automatically; use the URL above.'));
+      }
+
+      console.log(chalk.gray('Waiting for the provider OAuth callback...'));
+      const result = await completeLogin(target, {});
+      console.log(chalk.green(`✓ Logged in to ${result.provider}${result.accountLabel ? ` as ${result.accountLabel}` : ''}`));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (target === 'gemini' && message.includes('GEMINI_OAUTH_CLIENT_ID')) {
+        console.error(chalk.yellow('Gemini login needs a Google OAuth Desktop client before the first login.'));
+        console.error('Set these environment variables, then run `agentmesh login gemini` again:');
+        console.error('  GEMINI_OAUTH_CLIENT_ID=<your Google OAuth client ID>');
+        console.error('  GEMINI_OAUTH_CLIENT_SECRET=<your client secret, if required>');
+        console.error('  GEMINI_PROJECT_ID=<your Google Cloud project ID>');
+        console.error(chalk.gray('AgentMesh does not collect or store these values in the project.'));
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
     }
-
-    console.log(chalk.gray('Waiting for the provider OAuth callback...'));
-    const result = await completeLogin(target, {});
-    console.log(chalk.green(`✓ Logged in to ${result.provider}${result.accountLabel ? ` as ${result.accountLabel}` : ''}`));
   });
 
 program.command('logout <provider>').description('Remove the locally stored login credential for a provider').action((provider: string) => {
@@ -188,4 +205,8 @@ program.command('status').description('Show project status').action(() => {
   console.log('Context messages:', loadContext().length);
 });
 
-program.parse();
+program.parseAsync().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(chalk.red(`✗ ${message}`));
+  process.exitCode = 1;
+});
