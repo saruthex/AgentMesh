@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/cli",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "A provider-agnostic multi-agent orchestration platform for the terminal.",
   "type": "module",
   "bin": { "agentmesh": "./dist/index.js" },
@@ -9,7 +9,8 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "test": "npm run build && tsx --test test/*.test.ts"
   },
   "dependencies": {
     "chalk": "^5.4.1",
@@ -19,5 +20,18 @@
     "@types/node": "^22.13.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
-  }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saruthex/AgentMesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/saruthex/AgentMesh/issues"
+  },
+  "homepage": "https://github.com/saruthex/AgentMesh#readme",
+  "license": "MIT",
+  "keywords": ["ai", "agents", "cli", "orchestration", "multi-agent"]
 }
