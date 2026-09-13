@@ -16,5 +16,22 @@ export interface ChatResponse {
 
 export interface ProviderAdapter {
   readonly id: string;
+  readonly capabilities?: ProviderCapabilities;
   chat(request: ChatRequest): Promise<ChatResponse>;
+}
+
+export interface OAuthLoginOptions {
+  port?: number;
+  openBrowser?: boolean;
+}
+
+export interface OAuthLoginResult {
+  provider: string;
+  authenticated: boolean;
+  message?: string;
+}
+
+export interface ProviderCapabilities {
+  apiKeyAuth: boolean;
+  oauthLogin: boolean;
 }
