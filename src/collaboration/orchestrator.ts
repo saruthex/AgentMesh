@@ -55,7 +55,7 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
 
   for (let index = 0; index < runnableAgents.length; index++) {
     const agent = runnableAgents[index];
-    const previous = buildCollaborationContext(results);
+    const previous = buildCollaborationContext(results.filter(result => result.success));
     const prompt = [
       `You are agent "${agent.name}" with the role "${agent.role ?? 'general'}" in an AgentMesh collaboration.`,
       `Task: ${task}`,
@@ -70,7 +70,7 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
     ];
 
     try {
-      const response = await executeChat(providerFor(agent), history, { model: agent.model, authMode: 'account' });
+      const response = await executeChat(providerFor(agent), history, { model: agent.model, authMode: agent.provider === 'openai' || agent.provider === 'anthropic' ? 'account' : 'api' });
       addMessage({ role: 'agent', content: response.content, agentId: agent.id });
       results.push({ agent, content: response.content, success: true });
     } catch (error) {
