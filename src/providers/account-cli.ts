@@ -9,13 +9,11 @@ interface AccountCliSpec {
   modelArgs?: (model: string) => string[];
 }
 
+// These bridges delegate to provider-owned CLIs without reading or copying
+// their credentials. Gemini is intentionally excluded because Google's
+// Gemini CLI terms prohibit third-party software from piggybacking on its
+// OAuth/backend services.
 const SPECS: Record<string, AccountCliSpec> = {
-  gemini: {
-    provider: 'gemini',
-    command: 'gemini',
-    loginArgs: [],
-    promptArgs: prompt => ['-p', prompt, '--output-format', 'text']
-  },
   anthropic: {
     provider: 'anthropic',
     command: 'claude',
@@ -34,7 +32,7 @@ const SPECS: Record<string, AccountCliSpec> = {
 
 function specFor(provider: string): AccountCliSpec {
   const spec = SPECS[provider];
-  if (!spec) throw new Error(`No account CLI bridge is configured for provider: ${provider}`);
+  if (!spec) throw new Error(`No provider-approved account CLI bridge is configured for provider: ${provider}`);
   return spec;
 }
 
