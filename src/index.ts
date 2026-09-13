@@ -155,9 +155,14 @@ program.command('chat <message>')
     if (!activeAgent) throw new Error('Active agent configuration is invalid.');
     const providerId = options.provider ?? activeAgent.provider;
     const resolvedProvider = providerId === 'custom' ? 'mock' : providerId;
+    const authMode = options.api
+      ? 'api'
+      : resolvedProvider === 'openai' || resolvedProvider === 'anthropic'
+        ? 'account'
+        : 'api';
     addMessage({ role: 'user', content: message, agentId: activeAgent.id });
     const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
-    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model, authMode: options.api ? 'api' : 'account' });
+    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model, authMode });
     addMessage({ role: 'agent', content: response.content, agentId: activeAgent.id });
     console.log(chalk.green('✓ Message processed'));
     console.log(chalk.bold(response.content));
