@@ -16,6 +16,7 @@ import { orchestrate } from './collaboration/orchestrator.js';
 import { workflowSummary } from './collaboration/workflow.js';
 import { synthesizeResults } from './collaboration/synthesis.js';
 import { loginRegistry } from './providers/login-registry.js';
+import { startInteractiveMode } from './interactive.js';
 
 initializeProviders();
 
@@ -26,8 +27,10 @@ program.command('init [name]').description('Create an AgentMesh project').action
   const root = initProject(name);
   console.log(chalk.green('✓ AgentMesh project created'));
   console.log(chalk.cyan(root));
-  console.log(chalk.gray(`Next: cd "${root}" && agentmesh status`));
+  console.log(chalk.gray(`Next: cd "${root}" && agentmesh`));
 });
+
+program.command('interactive').alias('ui').description('Open the interactive AgentMesh terminal workspace').action(async () => startInteractiveMode());
 
 program.command('connect <provider>').option('-n, --name <name>').option('-m, --model <model>').option('-r, --role <role>', `Agent role: ${agentRoles.join(', ')}`)
   .description('Register an AI provider agent with this project')
@@ -155,11 +158,7 @@ program.command('chat <message>')
     if (!activeAgent) throw new Error('Active agent configuration is invalid.');
     const providerId = options.provider ?? activeAgent.provider;
     const resolvedProvider = providerId === 'custom' ? 'mock' : providerId;
-    const authMode = options.api
-      ? 'api'
-      : resolvedProvider === 'openai' || resolvedProvider === 'anthropic'
-        ? 'account'
-        : 'api';
+    const authMode = options.api ? 'api' : resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
     addMessage({ role: 'user', content: message, agentId: activeAgent.id });
     const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
     const response = await executeChat(resolvedProvider, history, { model: activeAgent.model, authMode });
@@ -222,8 +221,16 @@ program.command('status').description('Show project status').action(() => {
   console.log('Context messages:', loadContext().length);
 });
 
-program.parseAsync().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(chalk.red(`✗ ${message}`));
-  process.exitCode = 1;
-});
+if (process.argv.length <= 2) {
+  startInteractiveMode().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red(`✗ ${message}`));
+    process.exitCode = 1;
+  });
+} else {
+  program.parseAsync().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red(`✗ ${message}`));
+    process.exitCode = 1;
+  });
+}
