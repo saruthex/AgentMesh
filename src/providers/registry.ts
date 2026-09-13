@@ -14,6 +14,14 @@ export class ProviderRegistry {
   list(): string[] {
     return [...this.adapters.keys()];
   }
+
+  capabilities(): Record<string, NonNullable<ProviderAdapter["capabilities"]>> {
+    return Object.fromEntries(
+      [...this.adapters.entries()]
+        .filter(([, adapter]) => adapter.capabilities)
+        .map(([id, adapter]) => [id, adapter.capabilities!])
+    );
+  }
 }
 
 export const providerRegistry = new ProviderRegistry();
