@@ -8,25 +8,25 @@ Connect multiple AI providers, keep project context independent from any single 
 
 🚧 Active development — multi-agent orchestration foundation.
 
-The current development branch includes:
+The current development branch is being hardenend through clean-room integration testing.
+
+Implemented capabilities include:
 
 - project initialization and persistent project context
 - multiple named agents with provider/model/role configuration
-- agent switching without losing context
+- agent switching without losing project context
 - provider adapters for Mock, OpenAI, Anthropic, and Gemini
-- API authentication status and secure local credential storage
-- provider-owned account CLI authentication for supported OpenAI/Anthropic paths
-- real provider execution with transient retry handling
+- API-key authentication through environment variables
+- account authentication through provider-owned CLI sessions where supported
+- provider initialization and transient retry handling
 - role-based routing and workflow planning
-- multi-agent collaboration with bounded shared context
-- final synthesis of collaboration results
-- official Gemini developer OAuth login with local callback handling and token refresh
-- Termux-compatible provider CLI override support for OpenAI account execution
-- automated workflow/role regression tests
+- multi-agent sequential collaboration with bounded shared context
+- persisted collaboration results and final synthesis
+- official Gemini developer OAuth with local callback handling and token refresh
 
 ## Clean start
 
-AgentMesh is designed so a new user should not need to edit source code or repair generated files manually. From a fresh Termux environment, the development setup is:
+From a fresh Termux environment:
 
 ```bash
 git clone -b integration-hardening https://github.com/saruthex/AgentMesh.git
@@ -40,27 +40,26 @@ node dist/index.js --help
 
 For development, the CLI can be run directly from the repository with `node dist/index.js`. A globally installed package is not required.
 
-Create a separate AgentMesh project from the repository checkout:
+Create a separate AgentMesh project:
 
 ```bash
 node dist/index.js init my-project
 cd my-project
 ```
 
-Then use the CLI from inside that project:
-
-```bash
-node ../dist/index.js status
-node ../dist/index.js agents
-node ../dist/index.js providers
-```
-
-When your source checkout is `~/AgentMesh`, the equivalent commands are:
+When using a source checkout located at `~/AgentMesh`, the same project command can be run as:
 
 ```bash
 node ~/AgentMesh/dist/index.js init my-project
 cd ~/AgentMesh/my-project
+```
+
+Then use the CLI from inside that project:
+
+```bash
 node ~/AgentMesh/dist/index.js status
+node ~/AgentMesh/dist/index.js agents
+node ~/AgentMesh/dist/index.js providers
 ```
 
 ## Commands
@@ -106,7 +105,7 @@ Available roles:
 - `reviewer`
 - `tester`
 
-When you run `agentmesh swarm <task>` without explicitly selecting agents, AgentMesh can prioritize agents whose roles match the task. Use `--agents` when you need a specific set of agents regardless of role matching.
+When you run `agentmesh swarm <task>` without explicit agent selection, AgentMesh can prioritize agents whose roles match the task. Use `--agents` when you want an exact sequence regardless of role matching.
 
 ## Workflow planning
 
@@ -137,9 +136,9 @@ Each stage receives the shared project context plus previous agent output. Colla
 
 By default, `swarm` also asks a final agent to synthesize the team contributions into one practical answer. Use `--no-synthesize` to inspect only the individual contributions.
 
-For account-authenticated providers, both orchestration stages and final synthesis explicitly use the provider account path. `--api` is currently available on `chat` when you need to force API-key execution.
-
 ## Provider authentication
+
+### API-key mode
 
 API keys are read from environment variables and are not written into project files:
 
@@ -147,69 +146,56 @@ API keys are read from environment variables and are not written into project fi
 export OPENAI_API_KEY="..."
 export ANTHROPIC_API_KEY="..."
 export GEMINI_API_KEY="..."
-agentmesh auth
+node dist/index.js auth
 ```
 
-### Account login
+Use `agentmesh chat ... --api` when you explicitly want the provider adapter/API-key path instead of an available account CLI session.
 
-AgentMesh can delegate sign-in and execution to provider-owned CLIs where a compatible account-login path is available. AgentMesh does not copy, scrape, or store those provider CLI credentials.
+### Account login mode
 
-Current account CLI bridges:
+AgentMesh can delegate account login and execution to supported provider-owned CLIs without copying their credentials into AgentMesh.
 
-- **OpenAI:** delegates to the `codex` CLI and its ChatGPT account session. On Android/Termux, use a compatible Codex CLI build and optionally point AgentMesh at it with `AGENTMESH_OPENAI_CLI=/absolute/path/to/codex`.
-- **Anthropic:** delegates to the `claude` CLI when it is available.
-- **Gemini:** AgentMesh does not piggyback on Gemini CLI account OAuth. Use Gemini's supported developer/API authentication path instead.
-
-OpenAI example:
+OpenAI account path:
 
 ```bash
 codex login
 codex login status
-agentmesh auth
-agentmesh chat "Hello from my signed-in ChatGPT account"
+node dist/index.js auth
 ```
 
-Log out through the same provider-owned session:
+On Termux/Android ARM64, use a Codex CLI build that is actually runnable on the platform. AgentMesh supports the `AGENTMESH_OPENAI_CLI` environment override so the executable can be selected without hard-coding a specific distribution:
 
 ```bash
-agentmesh logout openai
+export AGENTMESH_OPENAI_CLI="/path/to/codex"
+node dist/index.js auth
 ```
 
-> ChatGPT login and OpenAI API billing are separate systems. A ChatGPT subscription does not automatically provide OpenAI API credits.
+Then connect an OpenAI agent and run normal `chat`/`swarm` commands. Account mode is the default for those commands; use `--api` to force API-key mode.
+
+Anthropic account mode delegates to the provider's `claude` CLI when it is installed and runnable.
 
 ### Gemini developer OAuth
 
-AgentMesh supports a separate developer OAuth flow for Gemini with PKCE, a local callback, secure local credential storage, and refresh-token support. It is intentionally distinct from Gemini CLI account credentials.
-
-Configure a Google Cloud project with the required Generative Language API access and a Desktop OAuth client, then set the OAuth configuration locally:
+Gemini account OAuth cannot be delegated through AgentMesh because Google prohibits third-party piggybacking on Gemini CLI OAuth/backend credentials. AgentMesh instead supports a separate developer OAuth flow:
 
 ```bash
 export GEMINI_OAUTH_CLIENT_ID="..."
 export GEMINI_OAUTH_CLIENT_SECRET="..."
 export GEMINI_PROJECT_ID="..."
+node dist/index.js login gemini --developer-oauth
 ```
 
-Then authenticate:
+Use `--no-browser` when automatic browser opening is unavailable. OAuth tokens are stored in the AgentMesh credential store rather than inside project files.
 
-```bash
-agentmesh login gemini --developer-oauth
-```
-
-On Termux, use `--no-browser` when you want to open the authorization URL yourself:
-
-```bash
-agentmesh login gemini --developer-oauth --no-browser
-```
-
-Secrets and tokens must never be pasted into source code, project files, commits, or chat.
+> ChatGPT login and OpenAI API billing are separate systems. A ChatGPT subscription does not automatically provide OpenAI API credits.
 
 ## Authentication status
 
 ```bash
-agentmesh auth
+node dist/index.js auth
 ```
 
-This reports provider API-key readiness and account-login readiness without exposing secret values.
+This reports API-key readiness and account-login readiness without exposing secret values.
 
 ## Development
 
@@ -238,6 +224,4 @@ The project context belongs to AgentMesh rather than a specific provider. Provid
 
 ## Project state
 
-Implementation work is currently being hardened on `integration-hardening`. Historical phase branches remain available for the earlier milestones.
-
-See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) for the implementation snapshot, authentication model, and validation expectations.
+See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md) for the implementation snapshot, clean-start procedure, authentication model, and validation expectations.
