@@ -1,7 +1,7 @@
 import type { AccountAuthCapability } from './account-auth.js';
 import { accountCliAuthenticated, accountCliInstalled, accountCliProviders } from './account-cli.js';
 
-function isTermuxArm64(): boolean {
+function isTermux(): boolean {
   return process.platform === 'android' || /android/i.test(process.env.TERMUX_VERSION ?? '') || /termux/i.test(process.env.PREFIX ?? '');
 }
 
@@ -17,16 +17,16 @@ export function accountAuthCapabilities(): AccountAuthCapability[] {
     {
       provider: 'openai',
       label: 'ChatGPT / OpenAI',
-      installReason: isTermuxArm64()
+      installReason: isTermux()
         ? 'Install a Termux-compatible Codex CLI build to enable ChatGPT account login.'
-        : 'Install a working official Codex CLI to enable ChatGPT account login.',
-      authReason: 'Complete the official Codex account login before using account authentication.'
+        : 'Install the Codex CLI to enable ChatGPT account login.',
+      authReason: 'Complete the Codex ChatGPT account login before using account authentication.'
     },
     {
       provider: 'anthropic',
       label: 'Claude / Anthropic',
       installReason: 'Install the official Claude CLI to enable Claude account login from AgentMesh.',
-      authReason: 'Complete the official Claude account login before using account authentication.'
+      authReason: 'Complete the Claude account login before using account authentication.'
     }
   ]) {
     let installed = false;
