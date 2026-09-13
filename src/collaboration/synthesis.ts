@@ -26,6 +26,6 @@ export async function synthesizeResults(task: string, results: OrchestrationResu
     }
   ];
 
-  const response = await executeChat(provider, messages, { model: preferred.model });
+  const response = await executeChat(provider, messages, { model: preferred.model, authMode: 'account' });
   return response.content;
 }
