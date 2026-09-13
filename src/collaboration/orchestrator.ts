@@ -69,7 +69,7 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
     ];
 
     try {
-      const response = await executeChat(providerFor(agent), history, { model: agent.model });
+      const response = await executeChat(providerFor(agent), history, { model: agent.model, authMode: 'account' });
       addMessage({ role: 'agent', content: response.content, agentId: agent.id });
       results.push({ agent, content: response.content });
     } catch (error) {
