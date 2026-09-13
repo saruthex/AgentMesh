@@ -1,5 +1,5 @@
-import { getCredential, removeCredential, saveCredential, type StoredCredential } from './credentials.js';
-import { loginRegistry } from './registry.js';
+import { getCredential, removeCredential, saveCredential, type StoredCredential } from '../providers/credentials.js';
+import { loginRegistry } from '../providers/login-registry.js';
 import type { LoginAuthMethod } from '../providers/auth.js';
 
 export function listLoginProviders(): string[] {
