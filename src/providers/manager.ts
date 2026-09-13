@@ -23,7 +23,7 @@ export function initializeProviders(): void {
 export interface ExecuteChatOptions {
   model?: string;
   retries?: number;
-  authMode?: 'account' | 'api';
+  authMode?: 'account' | 'api' | 'auto';
 }
 
 function isTransientError(error: unknown): boolean {
@@ -47,18 +47,21 @@ export async function executeChat(
 ): Promise<ChatResponse> {
   initializeProviders();
 
-  if (options.authMode !== 'api' && canUseAccountCli(providerId)) {
+  const authMode = options.authMode ?? 'auto';
+  const accountCapable = canUseAccountCli(providerId);
+
+  if (authMode !== 'api' && accountCapable) {
     try {
       return await executeAccountCli(providerId, messages, options.model);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (options.authMode === 'account' || /login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) {
+      if (authMode === 'account' || /login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) {
         throw error;
       }
     }
   }
 
-  if (options.authMode === 'account') {
+  if (authMode === 'account') {
     throw new Error(`Provider "${providerId}" has no authenticated account CLI available. Run \`agentmesh auth\` to check account readiness, then \`agentmesh login ${providerId}\` for supported account login.`);
   }
 
