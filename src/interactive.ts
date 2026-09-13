@@ -2,7 +2,7 @@ import { createInterface, type Interface } from 'node:readline';
 import chalk from 'chalk';
 import { findProjectRoot, readProjectConfig } from './storage/project.js';
 import { agentRoles, connectAgent, switchAgent } from './agents/registry.js';
-import { loadContext } from './context/store.js';
+import { loadContext, addMessage } from './context/store.js';
 import { providerRegistry } from './providers/registry.js';
 import { supportedAuthProviders, providerAuthStatus } from './providers/auth.js';
 import { accountLoginAvailability, accountLoginProviders, startAccountLogin } from './auth/account-login.js';
@@ -15,8 +15,6 @@ import type { ProviderMessage } from './providers/types.js';
 export const COMMANDS = ['help', 'status', 'agents', 'providers', 'auth', 'connect', 'switch', 'chat', 'plan', 'swarm', 'history', 'login', 'logout', 'clear', 'exit', 'quit'] as const;
 const SLASH_COMMANDS = COMMANDS.filter(command => command !== 'chat');
 
-type Spinner = { stop(): void };
-
 export function parseInteractiveInput(input: string): string[] {
   const parts = input.match(/(?:[^\s"]+|"[^"]*")+/g) ?? [];
   return parts.map(value => value.replace(/^"|"$/g, ''));
@@ -28,34 +26,29 @@ function requireProject(): string {
   return root;
 }
 
-function currentAgent(root: string) {
+function activeAgent(root: string) {
   const config = readProjectConfig(root);
   return config.agents.find(agent => agent.id === config.activeAgent);
 }
 
-function providerLabel(provider: string): string {
-  return provider === 'mock' ? 'mock' : provider;
-}
-
 function renderHeader(root: string): void {
   const config = readProjectConfig(root);
-  const active = config.agents.find(agent => agent.id === config.activeAgent);
+  const agent = activeAgent(root);
   console.log(chalk.cyan('\n╭──────────────────────────────────────────────────────╮'));
   console.log(chalk.cyan('│') + chalk.bold('                    AGENTMESH                         ') + chalk.cyan('│'));
   console.log(chalk.cyan('│') + chalk.gray('          Multi-Agent Terminal Workspace              ') + chalk.cyan('│'));
   console.log(chalk.cyan('╰──────────────────────────────────────────────────────╯'));
   console.log(`${chalk.gray('Project:')} ${chalk.bold(config.name)}    ${chalk.gray('Agents:')} ${config.agents.length}    ${chalk.gray('Context:')} ${loadContext().length}`);
-  if (active) {
-    const marker = active.provider === 'mock' ? chalk.yellow('⚠') : chalk.green('●');
-    console.log(`${marker} ${chalk.gray('Active:')} ${chalk.bold(active.name)} ${chalk.gray(`(${providerLabel(active.provider)}${active.role ? ` • ${active.role}` : ''})`)}`);
-    if (active.provider === 'mock') {
-      console.log(chalk.yellow('  Mock provider is for testing; it echoes prompts and does not generate AI answers.'));
-      console.log(chalk.gray('  Connect/switch to a real provider with: /connect openai <name> <role> or /switch <agent>'));
+  if (agent) {
+    const marker = agent.provider === 'mock' ? chalk.yellow('⚠') : chalk.green('●');
+    console.log(`${marker} ${chalk.gray('Active:')} ${chalk.bold(agent.name)} ${chalk.gray(`(${agent.provider}${agent.role ? ` • ${agent.role}` : ''})`)}`);
+    if (agent.provider === 'mock') {
+      console.log(chalk.yellow('  Mock provider is for testing and echoes prompts; it is not an AI model.'));
     }
   } else {
-    console.log(chalk.yellow('No active agent. Connect a provider with /connect <provider> [name] [role].'));
+    console.log(chalk.yellow('No active agent. Use /connect <provider> [name] [role].'));
   }
-  console.log(chalk.gray('Type naturally to chat. Start with / for workspace commands.\n'));
+  console.log(chalk.gray('Type naturally to chat. Start commands with / .\n'));
 }
 
 function printAgents(root: string): void {
@@ -65,15 +58,10 @@ function printAgents(root: string): void {
     return;
   }
   for (const agent of config.agents) {
-    const active = config.activeAgent === agent.id;
-    const marker = active ? chalk.green('●') : chalk.gray('○');
+    const marker = config.activeAgent === agent.id ? chalk.green('●') : chalk.gray('○');
     const provider = agent.provider === 'mock' ? chalk.yellow(agent.provider) : chalk.cyan(agent.provider);
-    console.log(`${marker} ${chalk.bold(agent.name)}  ${provider}  ${chalk.gray(agent.role ?? 'general')}${agent.model ? `  ${chalk.gray(agent.model)}` : ''}${active ? chalk.green('  active') : ''}`);
+    console.log(`${marker} ${chalk.bold(agent.name)}  ${provider}  ${chalk.gray(agent.role ?? 'general')}${agent.model ? `  ${chalk.gray(agent.model)}` : ''}${config.activeAgent === agent.id ? chalk.green('  active') : ''}`);
   }
-}
-
-function printProviders(): void {
-  for (const provider of providerRegistry.list()) console.log(`• ${provider}`);
 }
 
 function printAuth(): void {
@@ -99,101 +87,74 @@ function showHelp(): void {
   console.log('  /auth                                    Show authentication readiness');
   console.log('  /login <provider>                        Start provider account login');
   console.log('  /logout <provider>                       Log out of a provider account');
-  console.log('  /clear                                   Clear the current terminal screen');
+  console.log('  /clear                                   Clear the terminal screen');
   console.log('  /help                                    Show this help');
   console.log('  /exit /quit                              Leave AgentMesh');
-  console.log(chalk.gray('\nNormal text is always conversation. Use /<command> only for workspace actions.'));
+  console.log(chalk.gray('\nNormal text is always conversation.'));
 }
 
 function clearScreen(): void {
   process.stdout.write('\x1b[2J\x1b[H');
 }
 
-function startSpinner(label = 'Thinking'): Spinner {
+function startSpinner(label: string): { stop(): void } {
+  if (!process.stdout.isTTY) return { stop() {} };
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
   let index = 0;
   let active = true;
+  process.stdout.write(chalk.gray(`${label}…`));
   const timer = setInterval(() => {
-    if (!active) return;
-    process.stdout.write(`\r${chalk.gray(`${frames[index++ % frames.length]} ${label}…`)}`);
+    if (active) process.stdout.write(`\r${chalk.gray(`${frames[index++ % frames.length]} ${label}…`)}`);
   }, 80);
-  return {
-    stop() {
-      active = false;
-      clearInterval(timer);
-      process.stdout.write('\r\x1b[K');
-    },
-  };
+  return { stop() { active = false; clearInterval(timer); process.stdout.write('\r\x1b[K'); } };
 }
 
-function completionList(prefix: string): string[] {
-  const query = prefix.trim().toLowerCase();
-  if (!query.startsWith('/')) return [];
-  const body = query.slice(1);
-  return SLASH_COMMANDS.filter(command => command.startsWith(body)).map(command => `/${command}`);
+function completionList(input: string): string[] {
+  const value = input.trim().toLowerCase();
+  if (!value.startsWith('/')) return [];
+  const prefix = value.slice(1);
+  return SLASH_COMMANDS.filter(command => command.startsWith(prefix)).map(command => `/${command}`);
 }
 
-function installReadlineCompletion(rl: Interface): void {
-  const completer = (line: string) => {
-    const suggestions = completionList(line);
-    return [suggestions, line];
-  };
-  // Node readline's completer signature is stable across supported Node LTS versions.
-  (rl as Interface & { completer?: unknown }).completer = completer;
+export function completeInteractiveInput(input: string): [string[], string] {
+  const suggestions = completionList(input);
+  return [suggestions, input];
 }
 
 async function chatOnce(message: string): Promise<void> {
   const root = requireProject();
-  const agent = currentAgent(root);
+  const agent = activeAgent(root);
   if (!agent) {
     console.log(chalk.yellow('No active agent. Use /connect <provider> and then /switch <agent>.'));
     return;
   }
-  const current = loadContext();
-  const history: ProviderMessage[] = [...current.map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }) as ProviderMessage), { role: 'user', content: message }];
   const resolvedProvider = agent.provider === 'custom' ? 'mock' : agent.provider;
   const authMode = resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
-  process.stdout.write(chalk.gray(`${agent.name} is thinking`));
+  const current = loadContext();
+  const history: ProviderMessage[] = current.map(item => ({
+    role: item.role === 'agent' ? 'assistant' : item.role,
+    content: item.content,
+  }));
+  history.push({ role: 'user', content: message });
+
   const spinner = startSpinner('Thinking');
   const started = Date.now();
   try {
     const response = await executeChat(resolvedProvider, history, { model: agent.model, authMode });
     spinner.stop();
-    addMessageFromChat(agent.id, message, response.content);
+    addMessage({ role: 'user', content: message, agentId: agent.id });
+    addMessage({ role: 'agent', content: response.content, agentId: agent.id });
     const elapsed = ((Date.now() - started) / 1000).toFixed(1);
-    console.log(`\n${chalk.cyan(agent.name)} ${chalk.gray(`(${resolvedProvider} • ${elapsed}s)`)}> ${response.content}\n`);
+    console.log(`\n${chalk.cyan(agent.name)} ${chalk.gray(`(${resolvedProvider} • ${elapsed}s)`)}>`);
+    console.log(response.content);
+    console.log();
   } catch (error) {
     spinner.stop();
     const text = error instanceof Error ? error.message : String(error);
     console.log(chalk.red(`✗ ${text}`));
-    if (resolvedProvider === 'mock') {
-      console.log(chalk.gray('Mock responses are intentionally echoes. Connect a real provider to receive model output.'));
-    }
+    if (resolvedProvider === 'mock') console.log(chalk.gray('Mock responses are intentionally echoes. Connect a real provider for model-generated answers.'));
   }
 }
-
-function addMessageFromChat(agentId: string, userMessage: string, response: string): void {
-  const root = findProjectRoot(process.cwd());
-  if (!root) throw new Error('No AgentMesh project found.');
-  // Persist only after successful provider completion so failed turns do not pollute context.
-  const { addMessage } = requireContextStore();
-  addMessage({ role: 'user', content: userMessage, agentId });
-  addMessage({ role: 'agent', content: response, agentId });
-}
-
-function requireContextStore() {
-  // Kept as a small indirection so chat execution/tests can be isolated without changing the public store API.
-  return { addMessage: ((): ((message: { role: 'user' | 'agent'; content: string; agentId?: string }) => void) => {
-    // eslint-free local dynamic import is not needed; this branch is replaced by direct import at build-time through closure.
-    return message => {
-      const mod = contextAddMessage;
-      mod(message);
-    };
-  })() };
-}
-
-// The context store is synchronous; aliasing the imported function keeps this module easy to test.
-import { addMessage as contextAddMessage } from './context/store.js';
 
 function normalizeCommand(command: string): string {
   return command.startsWith('/') ? command.slice(1).toLowerCase() : command.toLowerCase();
@@ -202,12 +163,11 @@ function normalizeCommand(command: string): string {
 async function runCommand(input: string, root: string): Promise<boolean> {
   const [rawCommand, ...args] = parseInteractiveInput(input);
   if (!rawCommand) return true;
-  const command = normalizeCommand(rawCommand);
-
   if (!rawCommand.startsWith('/')) {
     await chatOnce(input.trim());
     return true;
   }
+  const command = normalizeCommand(rawCommand);
 
   switch (command) {
     case 'help': showHelp(); return true;
@@ -216,12 +176,12 @@ async function runCommand(input: string, root: string): Promise<boolean> {
     case 'clear': clearScreen(); renderHeader(root); return true;
     case 'status': {
       const config = readProjectConfig(root);
-      const active = config.agents.find(agent => agent.id === config.activeAgent);
-      console.log(`${chalk.bold(config.name)}\n${chalk.gray('Project:')} ${root}\n${chalk.gray('Agents:')} ${config.agents.length}\n${chalk.gray('Active:')} ${active ? `${active.name} (${active.provider})` : 'none'}\n${chalk.gray('Context messages:')} ${loadContext().length}`);
+      const agent = activeAgent(root);
+      console.log(`${chalk.bold(config.name)}\n${chalk.gray('Project:')} ${root}\n${chalk.gray('Agents:')} ${config.agents.length}\n${chalk.gray('Active:')} ${agent ? `${agent.name} (${agent.provider})` : 'none'}\n${chalk.gray('Context messages:')} ${loadContext().length}`);
       return true;
     }
     case 'agents': printAgents(root); return true;
-    case 'providers': printProviders(); return true;
+    case 'providers': for (const provider of providerRegistry.list()) console.log(`• ${provider}`); return true;
     case 'auth': printAuth(); return true;
     case 'history': {
       const messages = loadContext();
@@ -243,8 +203,8 @@ async function runCommand(input: string, root: string): Promise<boolean> {
     }
     case 'switch': {
       if (!args[0]) { console.log('Usage: /switch <agent>'); return true; }
-      const active = switchAgent(args[0]);
-      console.log(chalk.green(`✓ Active agent: ${active.name} (${active.provider})`));
+      const agent = switchAgent(args[0]);
+      console.log(chalk.green(`✓ Active agent: ${agent.name} (${agent.provider})`));
       return true;
     }
     case 'plan': {
@@ -259,7 +219,6 @@ async function runCommand(input: string, root: string): Promise<boolean> {
       const noSynthesize = args[0] === '--no-synthesize';
       const task = (noSynthesize ? args.slice(1) : args).join(' ').trim();
       if (!task) { console.log('Usage: /swarm [--no-synthesize] <task>'); return true; }
-      console.log(chalk.gray('Running swarm…'));
       const spinner = startSpinner('Working');
       try {
         const results = await orchestrate(task);
@@ -284,19 +243,20 @@ async function runCommand(input: string, root: string): Promise<boolean> {
     }
     case 'login': {
       const provider = args[0]?.toLowerCase();
-      if (!provider || provider === 'gemini') { console.log(chalk.yellow('Use /login openai or /login anthropic for provider-owned account login. Gemini account login must be completed in Gemini CLI itself.')); return true; }
+      if (!provider || provider === 'gemini') {
+        console.log(chalk.yellow('Use /login openai or /login anthropic for provider-owned account login. Gemini account login must be completed in Gemini CLI itself.'));
+        return true;
+      }
       await startAccountLogin(provider);
       console.log(chalk.green(`✓ ${provider} account login completed`));
       return true;
     }
-    case 'logout': {
-      console.log(chalk.yellow('Use `agentmesh logout <provider>` from the terminal for provider logout.'));
+    case 'logout':
+      console.log(chalk.gray('Use `agentmesh logout <provider>` from the outer terminal for provider logout.'));
       return true;
-    }
-    case 'chat': {
-      console.log(chalk.gray('Normal text is already chat. Just type your message at the main prompt.'));
+    case 'chat':
+      console.log(chalk.gray('Normal text is already chat. Type your message at the main prompt.'));
       return true;
-    }
     default:
       console.log(chalk.yellow(`Unknown workspace command: ${rawCommand}. Type /help.`));
       return true;
@@ -307,17 +267,22 @@ export async function startInteractiveMode(): Promise<void> {
   const root = requireProject();
   clearScreen();
   renderHeader(root);
-  const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: chalk.green('You › ') });
-  installReadlineCompletion(rl);
-  let running = true;
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: chalk.green('You › '),
+    completer: completeInteractiveInput,
+    terminal: process.stdin.isTTY && process.stdout.isTTY,
+  });
   rl.on('SIGINT', () => {
     console.log(chalk.gray('\nUse /exit to quit AgentMesh.'));
     rl.prompt();
   });
-  while (running) {
+  for (;;) {
     const line = await new Promise<string>(resolve => rl.question(chalk.green('You › '), resolve));
     try {
-      running = await runCommand(line.trim(), root);
+      const running = await runCommand(line.trim(), root);
+      if (!running) break;
     } catch (error) {
       const text = error instanceof Error ? error.message : String(error);
       console.log(chalk.red(`✗ ${text}`));
