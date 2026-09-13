@@ -183,18 +183,24 @@ program.command('plan <task>').description('Show the role-based workflow AgentMe
 
 program.command('swarm <task>')
   .option('-a, --agents <agents>', 'Comma-separated agent names or IDs')
+  .option('--api', 'Force API-key authentication for all swarm agents')
   .option('--no-synthesize', 'Skip the final combined answer')
   .description('Run a task through multiple agents sequentially using shared context')
   .action(async (task: string, options) => {
     const selectors = options.agents ? String(options.agents).split(',').map((value: string) => value.trim()).filter(Boolean) : undefined;
-    const results = await orchestrate(task, selectors);
-    console.log(chalk.green(`✓ Orchestration completed with ${results.length} agent(s)`));
+    const results = await orchestrate(task, selectors, options.api ? 'api' : 'account');
+    const succeeded = results.filter(result => result.success);
+    console.log(chalk.green(`✓ Orchestration completed with ${results.length} agent(s); ${succeeded.length} succeeded`));
     for (const result of results) {
-      console.log(chalk.cyan(`\n[${result.agent.name}]`));
+      console.log(chalk.cyan(`\n[${result.agent.name}]${result.success ? '' : ' — failed'}`));
       console.log(result.content);
     }
     if (options.synthesize) {
-      const finalAnswer = await synthesizeResults(task, results);
+      if (!succeeded.length) {
+        console.log(chalk.yellow('\n○ Final synthesis skipped: no agent completed successfully.'));
+        return;
+      }
+      const finalAnswer = await synthesizeResults(task, results, options.api ? 'api' : 'account');
       if (finalAnswer) {
         console.log(chalk.green('\n✓ Final synthesis'));
         console.log(chalk.bold(finalAnswer));
