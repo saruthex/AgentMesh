@@ -1,0 +1,90 @@
+import { spawn, spawnSync } from 'node:child_process';
+import type { ChatResponse, ProviderMessage } from './types.js';
+
+interface AccountCliSpec {
+  provider: string;
+  command: string;
+  loginArgs: string[];
+  promptArgs: (prompt: string) => string[];
+  modelArgs?: (model: string) => string[];
+}
+
+const SPECS: Record<string, AccountCliSpec> = {
+  gemini: {
+    provider: 'gemini',
+    command: 'gemini',
+    loginArgs: [],
+    promptArgs: prompt => ['-p', prompt, '--output-format', 'text']
+  },
+  anthropic: {
+    provider: 'anthropic',
+    command: 'claude',
+    loginArgs: [],
+    promptArgs: prompt => ['-p', prompt, '--output-format', 'text'],
+    modelArgs: model => ['--model', model]
+  },
+  openai: {
+    provider: 'openai',
+    command: 'codex',
+    loginArgs: ['login'],
+    promptArgs: prompt => ['exec', '--ephemeral', prompt],
+    modelArgs: model => ['--model', model]
+  }
+};
+
+function specFor(provider: string): AccountCliSpec {
+  const spec = SPECS[provider];
+  if (!spec) throw new Error(`No account CLI bridge is configured for provider: ${provider}`);
+  return spec;
+}
+
+export function accountCliInstalled(provider: string): boolean {
+  const spec = specFor(provider);
+  const result = spawnSync(spec.command, ['--version'], { stdio: 'ignore', shell: false });
+  return result.status === 0;
+}
+
+export function accountCliLogin(provider: string): Promise<void> {
+  const spec = specFor(provider);
+  return new Promise((resolve, reject) => {
+    const child = spawn(spec.command, spec.loginArgs, { stdio: 'inherit', shell: false });
+    child.once('error', error => reject(new Error(`Unable to start ${spec.command}: ${error.message}`)));
+    child.once('exit', code => code === 0 ? resolve() : reject(new Error(`${spec.command} login exited with code ${code ?? 'unknown'}.`)));
+  });
+}
+
+function buildPrompt(messages: ProviderMessage[]): string {
+  return messages.map(message => `${message.role.toUpperCase()}: ${message.content}`).join('\n\n');
+}
+
+export function executeAccountCli(provider: string, messages: ProviderMessage[], model?: string): Promise<ChatResponse> {
+  const spec = specFor(provider);
+  const prompt = buildPrompt(messages);
+  const args = [...spec.promptArgs(prompt), ...(model && spec.modelArgs ? spec.modelArgs(model) : [])];
+
+  return new Promise((resolve, reject) => {
+    const child = spawn(spec.command, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk.toString(); });
+    child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+    child.once('error', error => reject(new Error(`Unable to start ${spec.command}: ${error.message}`)));
+    child.once('exit', code => {
+      const content = stdout.trim();
+      if (code !== 0) {
+        const detail = stderr.trim() || content || `exit code ${code ?? 'unknown'}`;
+        reject(new Error(`${spec.command} account execution failed: ${detail}`));
+        return;
+      }
+      if (!content) {
+        reject(new Error(`${spec.command} returned an empty response.`));
+        return;
+      }
+      resolve({ content, model });
+    });
+  });
+}
+
+export function accountCliProviders(): string[] {
+  return Object.keys(SPECS);
+}
