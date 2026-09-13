@@ -30,6 +30,8 @@ const SPECS: Record<string, AccountCliSpec> = {
   }
 };
 
+const TERMUX_CODEX_INSTALL = 'npm install -g @mmmbuto/codex-cli-termux@latest';
+
 function specFor(provider: string): AccountCliSpec {
   const spec = SPECS[provider];
   if (!spec) throw new Error(`No provider-approved account CLI bridge is configured for provider: ${provider}`);
@@ -52,6 +54,20 @@ function commandBroken(command: string): boolean {
   return /missing optional dependency|cannot find module|module not found|no such file or directory/i.test(output);
 }
 
+function isTermuxArm64(): boolean {
+  return process.platform === 'android' || /android/i.test(process.env.TERMUX_VERSION ?? '') || /termux/i.test(process.env.PREFIX ?? '');
+}
+
+function termuxCodexRecoveryMessage(): string {
+  return [
+    'The official OpenAI Codex npm launcher is not runnable on this Termux/Android ARM64 environment.',
+    'For native Termux, install a Termux-compatible Codex build, then retry:',
+    `  ${TERMUX_CODEX_INSTALL}`,
+    '  codex --version',
+    'AgentMesh does not read or copy Codex credentials.'
+  ].join('\n');
+}
+
 export function accountCliInstalled(provider: string): boolean {
   return commandAvailable(specFor(provider).command);
 }
@@ -59,7 +75,8 @@ export function accountCliInstalled(provider: string): boolean {
 export function accountCliLogin(provider: string): Promise<void> {
   const spec = specFor(provider);
   if (commandBroken(spec.command)) {
-    throw new Error(`${spec.command} is installed but not runnable in this environment. Reinstall or use a provider CLI build compatible with your platform (for example, a Termux/Android build on ARM64).`);
+    if (provider === 'openai' && isTermuxArm64()) throw new Error(termuxCodexRecoveryMessage());
+    throw new Error(`${spec.command} is installed but not runnable in this environment. Reinstall or use a provider CLI build compatible with your platform.`);
   }
   return new Promise((resolve, reject) => {
     const child = spawn(spec.command, spec.loginArgs, { stdio: 'inherit', shell: false });
@@ -108,9 +125,6 @@ export function accountCliAuthenticated(provider: string): boolean {
   const command = specFor(provider).command;
   if (!commandAvailable(command)) return false;
 
-  // Codex exposes a non-interactive account status command. For Claude Code
-  // there is no portable non-interactive status API we can safely depend on,
-  // so installation remains the only supported readiness signal.
   if (provider === 'openai') {
     const result = spawnSync(command, ['login', 'status'], { stdio: 'ignore', shell: false });
     return result.status === 0;
