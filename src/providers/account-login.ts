@@ -1,20 +1,23 @@
-export interface AccountLoginStartResult {
+import { accountAuthCapabilities } from './account-auth-capabilities.js';
+
+export interface AccountLoginChoice {
   provider: string;
-  status: 'unsupported' | 'started';
-  authorizationUrl?: string;
-  message: string;
+  label: string;
+  available: boolean;
+  reason?: string;
 }
 
-/**
- * Provider account/subscription authentication must be explicitly supported by
- * the provider. AgentMesh must never scrape another CLI's credentials or
- * browser session.
- */
-export interface AccountLoginAdapter {
-  readonly provider: string;
-  start(): Promise<AccountLoginStartResult>;
+export function accountLoginChoices(): AccountLoginChoice[] {
+  return accountAuthCapabilities().map(capability => ({
+    provider: capability.provider,
+    label: capability.label,
+    available: capability.status === 'available',
+    ...(capability.reason ? { reason: capability.reason } : {})
+  }));
 }
 
-export function unsupportedAccountLogin(provider: string, message: string): AccountLoginStartResult {
-  return { provider, status: 'unsupported', message };
+export function accountLoginUnavailableMessage(provider: string): string {
+  const capability = accountAuthCapabilities().find(item => item.provider === provider);
+  if (!capability) return `Account login is not configured for ${provider}.`;
+  return capability.reason ?? `Account login is not currently available for ${capability.label}.`;
 }
