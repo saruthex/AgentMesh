@@ -1,76 +1,19 @@
 # AgentMesh Project State
 
-This is the handoff record for validating AgentMesh from a completely clean machine or Termux environment.
+This is the handoff record for validating and using AgentMesh from a completely clean machine or Termux environment.
 
-## Current baseline
+## Current release baseline
 
-**Branch:** `production-hardening`
+**Branch:** `cleanroom-hardening`
 
-This branch is based on the clean-room hardened implementation and is the active release-candidate hardening branch.
+The repository contains the validated Phase 1–10 implementation, account-login hardening, clean-room regression coverage, and release-candidate documentation. The latest real Termux validation successfully exercised the OpenAI account-login path through a provider-owned Codex session and persisted the response in project history.
 
-## Implemented capabilities
+## Download and run
 
-### Core CLI
-
-- initialize an AgentMesh project
-- locate and load project configuration
-- show project status
-- persist project context/history
-- connect multiple named agents
-- switch the active agent without replacing shared project context
-
-### Providers
-
-- provider registry and adapter abstraction
-- Mock provider for deterministic testing
-- OpenAI adapter
-- Anthropic adapter
-- Gemini adapter
-- provider/model selection per agent
-- API-key authentication through environment variables
-- provider initialization and execution manager
-- transient provider retry handling
-- per-agent provider failures do not destroy an entire collaboration run
-
-### Collaboration
-
-- roles: `general`, `researcher`, `architect`, `developer`, `reviewer`, `tester`
-- role-aware routing
-- workflow planning with `plan`
-- sequential multi-agent collaboration with `swarm`
-- explicit agent selection with `--agents`
-- bounded collaboration context
-- persisted shared results
-- optional final synthesis
-- `--no-synthesize` for individual contributions
-- account-authenticated OpenAI/Anthropic swarm execution by default when supported
-- explicit `--api` override for API-key execution
-
-### Authentication
-
-- provider authentication readiness reporting
-- login adapter abstraction and registry
-- AgentMesh-managed developer OAuth credential storage
-- login/logout service flow
-- Gemini developer OAuth with loopback callback and token refresh
-- provider-owned account CLI bridge for OpenAI and Anthropic
-- OpenAI provider CLI executable override through `AGENTMESH_OPENAI_CLI`
-- provider-owned OpenAI logout delegation
-
-## Credential and login policy
-
-AgentMesh-managed credentials are stored outside project directories under `~/.agentmesh/credentials.json` with restrictive file permissions. API keys remain environment-based.
-
-Provider-owned CLI sessions remain under provider control. AgentMesh does not copy browser cookies, passwords, session tokens, or provider CLI credentials.
-
-Gemini account login is intentionally not delegated through Gemini CLI OAuth. Gemini developer OAuth is kept as a separate supported flow.
-
-## Clean-start validation
-
-From a new checkout:
+AgentMesh is currently distributed as a GitHub source checkout. The simplest Termux workflow is:
 
 ```bash
-git clone -b production-hardening https://github.com/saruthex/AgentMesh.git
+git clone -b cleanroom-hardening https://github.com/saruthex/AgentMesh.git
 cd AgentMesh
 npm install
 npm run check
@@ -79,62 +22,137 @@ npm run build
 node dist/index.js --help
 ```
 
-Then create and exercise a separate project:
+No global installation is required. During development, run the CLI as `node dist/index.js` from the repository or `node ~/AgentMesh/dist/index.js` from a project directory.
+
+## Create a user project
+
+Keep project data separate from the source checkout:
 
 ```bash
-node dist/index.js init clean-test
-cd clean-test
+cd ~/AgentMesh
+node dist/index.js init my-project
+cd my-project
 node ../dist/index.js status
-node ../dist/index.js providers
-node ../dist/index.js connect mock -n researcher -r researcher
-node ../dist/index.js connect mock -n reviewer -r reviewer
-node ../dist/index.js switch reviewer
-node ../dist/index.js chat "remember AgentMesh CLEAN ROOM 2026"
-node ../dist/index.js history
-node ../dist/index.js plan "research and review this project"
-node ../dist/index.js swarm "use the shared context and propose the next step" --agents researcher,reviewer --no-synthesize
-node ../dist/index.js swarm "use the shared context and propose the next step" --agents researcher,reviewer
 ```
 
-The full user journey must work without manual TypeScript or generated-output edits.
+If the repository is stored at another path, replace `~/AgentMesh` with that path.
 
-## Account-login validation
+Project state is stored inside `my-project/.agentmesh/`.
 
-OpenAI account mode requires a provider-compatible `codex` CLI that is already installed and authenticated through its own supported login flow. AgentMesh only invokes the provider CLI.
+## First local test
+
+The Mock provider requires no external account and is the fastest way to verify the complete AgentMesh workflow:
+
+```bash
+node ../dist/index.js connect mock -n researcher -r researcher
+node ../dist/index.js connect mock -n reviewer -r reviewer
+node ../dist/index.js chat "Hello AgentMesh"
+node ../dist/index.js history
+node ../dist/index.js plan "research and review this project"
+node ../dist/index.js swarm "research and review this project" --agents researcher,reviewer
+```
+
+This validates project storage, shared context, roles, routing, collaboration, and synthesis. Mock output is deterministic and is not a real AI response.
+
+## Real OpenAI account mode
+
+Use the provider-owned Codex CLI login flow first:
 
 ```bash
 codex login
 codex login status
-node ~/AgentMesh/dist/index.js auth
 ```
 
-Expected: OpenAI reports `account login ready` when the selected CLI reports a valid account session.
+Then from an AgentMesh project:
 
-For Android/Termux compatibility, the executable may be selected with:
+```bash
+node ../dist/index.js auth
+node ../dist/index.js connect openai -n chatgpt-agent
+node ../dist/index.js chat "Reply with exactly: AGENTMESH RELEASE 2026"
+node ../dist/index.js history
+```
+
+Expected authentication status:
+
+```text
+✓ openai: account login ready
+```
+
+AgentMesh invokes the provider-owned CLI and does not copy or store its account credentials.
+
+For Termux/Android, a compatible Codex executable can be selected with:
 
 ```bash
 export AGENTMESH_OPENAI_CLI="/absolute/path/to/codex"
 ```
 
-Then connect and use the normal AgentMesh chat/swarm commands. Do not paste API keys or login secrets into the shell transcript or chat.
+## API-key mode
 
-Anthropic account mode follows the same provider-owned CLI principle using `claude` when installed and runnable.
+API-key mode is separate from account mode and reads credentials only from environment variables:
 
-## Gemini developer OAuth validation
+```bash
+export OPENAI_API_KEY="YOUR_KEY"
+export ANTHROPIC_API_KEY="YOUR_KEY"
+export GEMINI_API_KEY="YOUR_KEY"
+```
 
-The separate developer OAuth flow requires provider configuration supplied locally and should never be committed. A missing configuration must produce an actionable message rather than a Node stack trace.
+Use `--api` when explicitly selecting the API path:
 
-## Release gate
+```bash
+node ../dist/index.js chat "Hello" --api
+```
 
-The release candidate is not considered production-ready until a clean environment passes:
+Never put API keys in project files, GitHub issues, commits, or chat messages.
 
-1. `npm install`
-2. `npm run check`
-3. `npm test`
-4. `npm run build`
-5. `node dist/index.js --help`
-6. clean project init/status/providers/connect/switch/chat/history/plan/swarm
-7. account-auth readiness and logout behavior where the provider CLI is available
-8. real provider execution where valid authentication and billing are available
+## Other providers
 
-A provider billing or account prerequisite must remain an explicit external prerequisite; it must never be hidden by a fallback that silently changes the requested authentication mode.
+Anthropic account mode uses the official `claude` CLI when installed and runnable. Gemini account login is not implemented by reusing Gemini CLI credentials; Gemini developer OAuth and API-key paths are separate.
+
+## Main commands
+
+```text
+init [name]                         Create a project
+connect <provider>                  Add an agent
+agents                              List connected agents
+switch <agent>                      Change active agent
+providers                           List available adapters
+auth                                Check authentication readiness
+login [provider]                    Start supported login flow
+logout <provider>                   Log out/remove stored login
+chat <message>                     Send a message
+chat <message> --api                Force API-key mode
+plan <task>                         Preview role-based workflow
+swarm <task>                        Run multiple agents sequentially
+swarm <task> --agents a,b           Run exact agents in order
+swarm <task> --no-synthesize        Skip final synthesis
+history                             Show shared project history
+status                              Show project status
+```
+
+## Clean-room validation status
+
+The automated suite currently covers:
+
+- provider-owned account CLI registry and error handling;
+- account-login readiness and authentication-mode routing;
+- secure CLI output/error handling;
+- full offline Phase 1–10 CLI lifecycle;
+- role-aware workflow planning;
+- sequential orchestration and failure isolation;
+- synthesis provider selection;
+- package/install metadata.
+
+The validated Termux release-candidate run passed TypeScript checking, **31/31 tests**, production build, CLI help, fresh project creation, provider discovery, multi-agent setup, chat persistence, role planning, swarm execution, and real OpenAI account-mode execution.
+
+## Security
+
+Never commit or paste:
+
+- API keys
+- OAuth access or refresh tokens
+- client secrets
+- passwords
+- browser cookies
+- provider session files
+
+AgentMesh owns project context and orchestration. Provider-specific account credentials remain with provider-owned CLI sessions; AgentMesh-managed developer OAuth credentials are stored outside project directories under `~/.agentmesh/credentials.json`.
