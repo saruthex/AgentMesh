@@ -1,4 +1,3 @@
-import type { AgentRecord } from '../agents/types.js';
 import { executeChat } from '../providers/manager.js';
 import type { ProviderMessage } from '../providers/types.js';
 import type { OrchestrationResult } from './orchestrator.js';
@@ -27,6 +26,6 @@ export async function synthesizeResults(task: string, results: OrchestrationResu
     }
   ];
 
-  const response = await executeChat(provider, messages, preferred.model);
+  const response = await executeChat(provider, messages, { model: preferred.model });
   return response.content;
 }
