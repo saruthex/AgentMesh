@@ -1,5 +1,5 @@
 import type { AccountAuthCapability } from './account-auth.js';
-import { accountCliAuthenticated, accountCliProviders } from './account-cli.js';
+import { accountCliAuthenticated, accountCliInstalled, accountCliProviders } from './account-cli.js';
 
 /**
  * Resolve account sign-in readiness from provider-owned CLIs at runtime.
@@ -13,25 +13,31 @@ export function accountAuthCapabilities(): AccountAuthCapability[] {
     {
       provider: 'openai',
       label: 'ChatGPT / OpenAI',
-      reason: 'Install the official Codex CLI, then complete `codex login`, to enable ChatGPT account login.'
+      installReason: 'Install a working official Codex CLI to enable ChatGPT account login.',
+      authReason: 'Complete the official Codex account login before using account authentication.'
     },
     {
       provider: 'anthropic',
       label: 'Claude / Anthropic',
-      reason: 'Install the official Claude CLI to enable Claude account login from AgentMesh.'
+      installReason: 'Install the official Claude CLI to enable Claude account login from AgentMesh.',
+      authReason: 'Complete the official Claude account login before using account authentication.'
     }
   ]) {
-    let available = false;
+    let installed = false;
+    let authenticated = false;
     try {
-      available = configured.has(item.provider) && accountCliAuthenticated(item.provider);
+      installed = configured.has(item.provider) && accountCliInstalled(item.provider);
+      authenticated = installed && accountCliAuthenticated(item.provider);
     } catch {
-      available = false;
+      installed = false;
+      authenticated = false;
     }
+
     capabilities.push({
       provider: item.provider,
       label: item.label,
-      status: available ? 'available' : 'unavailable',
-      ...(available ? {} : { reason: item.reason })
+      status: authenticated ? 'available' : 'unavailable',
+      reason: authenticated ? undefined : installed ? item.authReason : item.installReason
     });
   }
 
