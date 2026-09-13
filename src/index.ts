@@ -183,7 +183,7 @@ program.command('plan <task>').description('Show the role-based workflow AgentMe
 
 program.command('swarm <task>')
   .option('-a, --agents <agents>', 'Comma-separated agent names or IDs')
-  .option('--api', 'Force API-key authentication for all swarm agents')
+  .option('--api', 'Force API-key authentication for OpenAI/Anthropic swarm agents; provider-local adapters remain adapter-authenticated')
   .option('--no-synthesize', 'Skip the final combined answer')
   .description('Run a task through multiple agents sequentially using shared context')
   .action(async (task: string, options) => {
