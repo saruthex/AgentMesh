@@ -19,9 +19,7 @@ export function parseInteractiveInput(input: string): string[] {
   const parts: string[] = [];
   const pattern = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|(\S+)/g;
   let match: RegExpExecArray | null;
-  while ((match = pattern.exec(input.trim())) !== null) {
-    parts.push(match[1] ?? match[2] ?? match[3]);
-  }
+  while ((match = pattern.exec(input.trim())) !== null) parts.push(match[1] ?? match[2] ?? match[3]);
   return parts.map(part => part.replace(/\\(["'])/g, '$1'));
 }
 
@@ -39,15 +37,12 @@ function renderHeader(root: string): void {
   console.log(chalk.cyan('╰──────────────────────────────────────────╯'));
   console.log(`${chalk.gray('Project:')} ${chalk.bold(config.name)}`);
   console.log(`${chalk.gray('Agents:')} ${config.agents.length}  ${chalk.gray('Context:')} ${loadContext().length}`);
-  console.log(chalk.gray('Type `help` for commands.\n'));
+  console.log(chalk.gray('Type `help` for commands. Type `exit` to leave.\n'));
 }
 
 function printAgents(root: string): void {
   const config = readProjectConfig(root);
-  if (!config.agents.length) {
-    console.log(chalk.yellow('No agents connected yet. Use: connect <provider> [name] [role]'));
-    return;
-  }
+  if (!config.agents.length) return console.log(chalk.yellow('No agents connected yet. Use: connect <provider> [name] [role]'));
   for (const agent of config.agents) {
     const marker = config.activeAgent === agent.id ? chalk.green('●') : chalk.gray('○');
     console.log(`${marker} ${chalk.bold(agent.name)}  ${chalk.gray(agent.provider)}  ${chalk.gray(agent.role ?? 'general')}${agent.model ? `  ${chalk.gray(agent.model)}` : ''}${config.activeAgent === agent.id ? chalk.green('  active') : ''}`);
@@ -83,7 +78,7 @@ function help(): void {
   console.log('  login <provider>                        Start provider account login');
   console.log('  help                                    Show this help');
   console.log('  exit / quit                             Leave AgentMesh');
-  console.log(chalk.gray('\nOutside interactive mode, every command is also available directly: agentmesh <command> ...\n'));
+  console.log(chalk.gray('\nAll non-interactive commands remain available: agentmesh <command> ...\n'));
 }
 
 async function interactiveChat(): Promise<void> {
@@ -101,8 +96,7 @@ async function interactiveChat(): Promise<void> {
       const message = (await ask(chalk.green('you> '))).trim();
       if (message === '/exit' || message === '/quit') break;
       if (!message) continue;
-      const current = loadContext();
-      const history: ProviderMessage[] = current.map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
+      const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
       try {
         const resolvedProvider = agent.provider === 'custom' ? 'mock' : agent.provider;
         const authMode = resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
@@ -202,10 +196,7 @@ export async function startInteractiveMode(): Promise<void> {
   renderHeader(root);
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   let running = true;
-  const onSigint = () => {
-    console.log(chalk.gray('\nUse `exit` to leave AgentMesh.'));
-    rl.prompt();
-  };
+  const onSigint = () => console.log(chalk.gray('\nUse `exit` to leave AgentMesh.'));
   rl.on('SIGINT', onSigint);
   try {
     while (running) {
