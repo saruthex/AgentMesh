@@ -85,7 +85,7 @@ export function accountCliLogout(provider: string): Promise<void> {
     throw new Error(`The ${provider} account CLI does not expose a supported logout command.`);
   }
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit', shell: false }) as import('node:child_process').ChildProcess;
+    const child = spawn(command, args, { stdio: 'inherit', shell: false });
     child.once('error', (error: Error) => reject(new Error(`Unable to start ${command}: ${error.message}`)));
     child.once('exit', (code: number | null) => code === 0 ? resolve() : reject(new Error(`${command} logout exited with code ${code ?? 'unknown'}.`)));
   });
