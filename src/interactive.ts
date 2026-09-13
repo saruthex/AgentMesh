@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline';
 import chalk from 'chalk';
 import { findProjectRoot, readProjectConfig } from './storage/project.js';
 import { agentRoles, connectAgent, switchAgent } from './agents/registry.js';
-import { loadContext } from './context/store.js';
+import { addMessage, loadContext } from './context/store.js';
 import { providerRegistry } from './providers/registry.js';
 import { supportedAuthProviders, providerAuthStatus } from './providers/auth.js';
 import { accountLoginAvailability, accountLoginProviders, startAccountLogin } from './auth/account-login.js';
@@ -49,9 +49,7 @@ function printAgents(root: string): void {
   }
 }
 
-function printProviders(): void {
-  for (const provider of providerRegistry.list()) console.log(`• ${provider}`);
-}
+function printProviders(): void { for (const provider of providerRegistry.list()) console.log(`• ${provider}`); }
 
 function printAuth(): void {
   for (const provider of supportedAuthProviders()) {
@@ -82,8 +80,7 @@ function help(): void {
 }
 
 async function interactiveChat(): Promise<void> {
-  const root = requireProject();
-  const config = readProjectConfig(root);
+  const config = readProjectConfig(requireProject());
   if (!config.activeAgent) throw new Error('No active agent. Connect one first.');
   const agent = config.agents.find(item => item.id === config.activeAgent);
   if (!agent) throw new Error('Active agent configuration is invalid.');
@@ -100,23 +97,21 @@ async function interactiveChat(): Promise<void> {
       try {
         const resolvedProvider = agent.provider === 'custom' ? 'mock' : agent.provider;
         const authMode = resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
-        const response = await executeChat(resolvedProvider, history, { model: agent.model, authMode });
+        addMessage({ role: 'user', content: message, agentId: agent.id });
+        const response = await executeChat(resolvedProvider, [...history, { role: 'user', content: message }], { model: agent.model, authMode });
+        addMessage({ role: 'agent', content: response.content, agentId: agent.id });
         console.log(`\n${chalk.cyan(agent.name)}> ${response.content}\n`);
       } catch (error) {
-        const text = error instanceof Error ? error.message : String(error);
-        console.log(chalk.red(`✗ ${text}`));
+        console.log(chalk.red(`✗ ${error instanceof Error ? error.message : String(error)}`));
       }
     }
-  } finally {
-    rl.close();
-  }
+  } finally { rl.close(); }
 }
 
 export async function runInteractiveCommand(input: string, root: string): Promise<boolean> {
   const parts = parseInteractiveInput(input);
   const [command, ...args] = parts;
   if (!command) return true;
-
   switch (command.toLowerCase()) {
     case 'help': help(); return true;
     case 'exit':
@@ -140,10 +135,9 @@ export async function runInteractiveCommand(input: string, root: string): Promis
       if (!provider) { console.log('Usage: connect <provider> [name] [role]'); return true; }
       const supported = [...providerRegistry.list(), 'custom'];
       if (!supported.includes(provider)) { console.log(chalk.red(`Unsupported provider. Use: ${supported.join(', ')}`)); return true; }
-      const name = args[1];
       const role = (args[2] ?? 'general') as AgentRole;
       if (!agentRoles.includes(role)) { console.log(chalk.red(`Invalid role. Use: ${agentRoles.join(', ')}`)); return true; }
-      const agent = connectAgent(provider, name, undefined, role);
+      const agent = connectAgent(provider, args[1], undefined, role);
       console.log(chalk.green(`✓ Connected ${agent.name} (${provider}, ${role})`));
       return true;
     }
@@ -201,16 +195,9 @@ export async function startInteractiveMode(): Promise<void> {
   try {
     while (running) {
       const line = await new Promise<string>(resolve => rl.question(chalk.green('agentmesh> '), resolve));
-      try {
-        running = await runInteractiveCommand(line, root);
-      } catch (error) {
-        const text = error instanceof Error ? error.message : String(error);
-        console.log(chalk.red(`✗ ${text}`));
-      }
+      try { running = await runInteractiveCommand(line, root); }
+      catch (error) { console.log(chalk.red(`✗ ${error instanceof Error ? error.message : String(error)}`)); }
     }
-  } finally {
-    rl.off('SIGINT', onSigint);
-    rl.close();
-  }
+  } finally { rl.off('SIGINT', onSigint); rl.close(); }
   console.log(chalk.gray('Goodbye 👋'));
 }
