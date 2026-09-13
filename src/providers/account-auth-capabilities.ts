@@ -1,6 +1,10 @@
 import type { AccountAuthCapability } from './account-auth.js';
 import { accountCliAuthenticated, accountCliInstalled, accountCliProviders } from './account-cli.js';
 
+function isTermuxArm64(): boolean {
+  return process.platform === 'android' || /android/i.test(process.env.TERMUX_VERSION ?? '') || /termux/i.test(process.env.PREFIX ?? '');
+}
+
 /**
  * Resolve account sign-in readiness from provider-owned CLIs at runtime.
  * AgentMesh never reads or copies provider credential stores.
@@ -13,7 +17,9 @@ export function accountAuthCapabilities(): AccountAuthCapability[] {
     {
       provider: 'openai',
       label: 'ChatGPT / OpenAI',
-      installReason: 'Install a working official Codex CLI to enable ChatGPT account login.',
+      installReason: isTermuxArm64()
+        ? 'Install a Termux-compatible Codex CLI build to enable ChatGPT account login.'
+        : 'Install a working official Codex CLI to enable ChatGPT account login.',
       authReason: 'Complete the official Codex account login before using account authentication.'
     },
     {
