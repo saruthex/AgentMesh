@@ -221,8 +221,16 @@ program.command('status').description('Show project status').action(() => {
   console.log('Context messages:', loadContext().length);
 });
 
-program.parseAsync().catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(chalk.red(`✗ ${message}`));
-  process.exitCode = 1;
-});
+if (process.argv.length <= 2) {
+  startInteractiveMode().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red(`✗ ${message}`));
+    process.exitCode = 1;
+  });
+} else {
+  program.parseAsync().catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(chalk.red(`✗ ${message}`));
+    process.exitCode = 1;
+  });
+}
