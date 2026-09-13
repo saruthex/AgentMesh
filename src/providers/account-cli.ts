@@ -44,20 +44,23 @@ function commandFor(spec: AccountCliSpec): string {
   return process.env[spec.envCommand ?? '']?.trim() || spec.command;
 }
 
-function commandAvailable(command: string): boolean {
-  const result = spawnSync(command, ['--version'], { stdio: 'ignore', shell: false });
-  return result.status === 0;
-}
-
-function commandBroken(command: string): boolean {
-  const result = spawnSync(command, ['--version'], {
+function commandStatus(command: string, args: string[] = ['--version']): { available: boolean; broken: boolean; output: string } {
+  const result = spawnSync(command, args, {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     shell: false
   });
-  if (result.status === 0) return false;
-  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-  return /missing optional dependency|cannot find module|module not found|no such file or directory/i.test(output);
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim();
+  const broken = result.status !== 0 && /missing optional dependency|cannot find module|module not found|no such file or directory/i.test(output);
+  return { available: result.status === 0, broken, output };
+}
+
+function commandAvailable(command: string): boolean {
+  return commandStatus(command).available;
+}
+
+function commandBroken(command: string): boolean {
+  return commandStatus(command).broken;
 }
 
 export function accountCliInstalled(provider: string): boolean {
