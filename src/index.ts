@@ -87,7 +87,7 @@ program.command('chat <message>')
       content: item.content
     }));
 
-    const response = await executeChat(resolvedProvider, history, activeAgent.model);
+    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model });
     addMessage({ role: 'agent', content: response.content, agentId: activeAgent.id });
 
     console.log(chalk.green('✓ Message processed'));
