@@ -11,16 +11,17 @@ npm install
 npm run check
 npm test
 npm run build
-node dist/index.js init my-project
+npm install -g .
+agentmesh init my-project
 cd my-project
-node ../dist/index.js
+agentmesh
 ```
 
-The last command opens the AI-first interactive terminal. No graphical interface is required. Normal text is sent directly to the active agent; slash commands control the workspace.
+After the global install, `agentmesh` opens the interactive workspace directly—no `interactive` or `ui` subcommand is required. The package exposes the `agentmesh` executable through npm's `bin` field, and the CLI entrypoint is a Node executable. The app runs in a normal terminal, including Termux; no graphical interface is required.
 
 ## AI-first interactive terminal
 
-The interactive workspace is designed for a Codex-style terminal experience: talk to AgentMesh instead of typing `chat` before every message.
+The interactive workspace is designed for a Codex-style terminal experience: type normal language to talk to the active agent, and use slash commands for workspace control.
 
 ```text
 ╭──────────────────────────────────────────╮
@@ -30,49 +31,54 @@ The interactive workspace is designed for a Codex-style terminal experience: tal
 Project: my-project
 Agents: 2  Context: 4
 
-You › Explain how to structure this authentication system.
+agentmesh> /connect openai architect architect
+✓ Connected architect (openai, architect)
+
+agentmesh> /connect mock reviewer reviewer
+✓ Connected reviewer (mock, reviewer)
+
+agentmesh> /switch architect
+✓ Active agent: architect
+
+agentmesh> Explain how to structure this authentication system.
 
 architect> ...
 
-You › /agents
-● architect  openai  architect  active
-○ reviewer   mock      reviewer
-
-You › /switch reviewer
+agentmesh> /switch reviewer
 ✓ Active agent: reviewer
 
-You › Review the previous answer and find security gaps.
+agentmesh> Review the previous answer and find security gaps.
 
 reviewer> ...
 
-You › /swarm Design and review the complete authentication flow.
+agentmesh> /swarm Design and review the complete authentication flow.
 
-You › /history
+agentmesh> /history
 
-You › /exit
+agentmesh> /exit
 Goodbye 👋
 ```
 
-### Slash commands
+Inside the workspace, normal text is conversation. The available workspace commands are:
 
 ```text
+/help
+/status
 /agents
+/providers
+/auth
 /connect <provider> [name] [role]
 /switch <agent>
 /plan <task>
 /swarm <task>
 /swarm --no-synthesize <task>
 /history
-/status
-/providers
-/auth
 /login <provider>
 /logout <provider>
-/help
 /exit
 ```
 
-Normal text is always treated as conversation. The legacy `/chat <message>` form remains accepted inside the workspace for compatibility, while the classic `agentmesh chat "..."` command remains available for scripts and automation.
+The legacy `/chat` form remains supported inside the workspace for compatibility. Classic non-interactive commands remain available as `agentmesh <command> ...` for scripts and automation.
 
 Explicit interactive entrypoints are also available:
 
@@ -102,7 +108,9 @@ Supported provider adapters currently include `mock`, `openai`, `anthropic`, and
 
 ## Account authentication
 
-OpenAI and Anthropic account authentication uses their provider-owned CLIs when available. AgentMesh does not copy or store those provider credentials. Gemini account OAuth is not delegated through AgentMesh; use Gemini's supported login flow or the Gemini API-key path.
+OpenAI and Anthropic account authentication uses provider-owned CLIs when available. AgentMesh does not copy or store those provider credentials. Gemini account OAuth is not delegated through AgentMesh; use Gemini's own supported login flow or the Gemini API-key path.
+
+For API-key mode, use the normal provider environment variables supported by AgentMesh. The `--api` option forces API-key execution for OpenAI/Anthropic where applicable.
 
 ## Termux
 
