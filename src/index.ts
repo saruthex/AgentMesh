@@ -26,7 +26,7 @@ program.command('init [name]').description('Create an AgentMesh project').action
   const root = initProject(name);
   console.log(chalk.green('✓ AgentMesh project created'));
   console.log(chalk.cyan(root));
-  console.log(chalk.gray(`Next: cd "${root}" && agentmesh status`));
+  console.log(chalk.gray(`Next: cd \"${root}\" && agentmesh status`));
 });
 
 program.command('connect <provider>').option('-n, --name <name>').option('-m, --model <model>').option('-r, --role <role>', `Agent role: ${agentRoles.join(', ')}`)
@@ -188,7 +188,7 @@ program.command('swarm <task>')
   .description('Run a task through multiple agents sequentially using shared context')
   .action(async (task: string, options) => {
     const selectors = options.agents ? String(options.agents).split(',').map((value: string) => value.trim()).filter(Boolean) : undefined;
-    const results = await orchestrate(task, selectors, options.api ? 'api' : 'account');
+    const results = await orchestrate(task, selectors);
     const succeeded = results.filter(result => result.success);
     console.log(chalk.green(`✓ Orchestration completed with ${results.length} agent(s); ${succeeded.length} succeeded`));
     for (const result of results) {
@@ -200,7 +200,7 @@ program.command('swarm <task>')
         console.log(chalk.yellow('\n○ Final synthesis skipped: no agent completed successfully.'));
         return;
       }
-      const finalAnswer = await synthesizeResults(task, results, options.api ? 'api' : 'account');
+      const finalAnswer = await synthesizeResults(task, results);
       if (finalAnswer) {
         console.log(chalk.green('\n✓ Final synthesis'));
         console.log(chalk.bold(finalAnswer));
