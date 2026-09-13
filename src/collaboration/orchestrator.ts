@@ -9,6 +9,7 @@ import { buildCollaborationContext } from './context.js';
 export interface OrchestrationResult {
   agent: AgentRecord;
   content: string;
+  success: boolean;
 }
 
 function resolveAgents(selectors?: string[]): AgentRecord[] {
@@ -59,8 +60,8 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
       `You are agent "${agent.name}" with the role "${agent.role ?? 'general'}" in an AgentMesh collaboration.`,
       `Task: ${task}`,
       `You are stage ${index + 1} of ${runnableAgents.length}.`,
-      'Focus on responsibilities appropriate to your role. Review the shared context and previous agent output, then contribute a useful next step.',
-      `Previous agent output:\n${previous}`
+      'Focus on responsibilities appropriate to your role. Review the shared context and previous successful agent output, then contribute a useful next step.',
+      `Previous successful agent output:\n${previous}`
     ].join('\n\n');
 
     const history: ProviderMessage[] = [
@@ -71,12 +72,12 @@ export async function orchestrate(task: string, selectors?: string[]): Promise<O
     try {
       const response = await executeChat(providerFor(agent), history, { model: agent.model, authMode: 'account' });
       addMessage({ role: 'agent', content: response.content, agentId: agent.id });
-      results.push({ agent, content: response.content });
+      results.push({ agent, content: response.content, success: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const content = `Agent "${agent.name}" failed: ${message}`;
       addMessage({ role: 'agent', content, agentId: agent.id });
-      results.push({ agent, content });
+      results.push({ agent, content, success: false });
     }
   }
 
