@@ -1,30 +1,46 @@
 import type { AccountAuthCapability } from './account-auth.js';
+import { accountCliInstalled } from './account-cli.js';
 
 /**
- * First-class account sign-in is separate from developer API-key auth.
- * A provider is marked available only when AgentMesh has a provider-approved
- * third-party account-authentication mechanism. AgentMesh must never reuse
- * another CLI's credentials, cookies, browser profiles, or private OAuth data.
+ * Account sign-in capabilities are resolved at runtime. AgentMesh delegates
+ * OpenAI/Anthropic account authentication to their provider-owned CLIs and
+ * never reads or copies those CLIs' credential stores.
  */
 export function accountAuthCapabilities(): AccountAuthCapability[] {
-  return [
-    {
-      provider: 'gemini',
-      label: 'Gemini / Google',
-      status: 'unavailable',
-      reason: 'AgentMesh cannot reuse Gemini CLI account credentials. A provider-approved third-party account flow is required.'
-    },
+  const capabilities: AccountAuthCapability[] = [];
+
+  for (const item of [
     {
       provider: 'openai',
       label: 'ChatGPT / OpenAI',
-      status: 'unavailable',
-      reason: 'AgentMesh cannot reuse Codex or ChatGPT session credentials. A provider-approved third-party account flow is required.'
+      reason: 'Install the official Codex CLI to enable ChatGPT account login from AgentMesh.'
     },
     {
       provider: 'anthropic',
       label: 'Claude / Anthropic',
-      status: 'unavailable',
-      reason: 'No provider-approved third-party account sign-in flow is configured for AgentMesh.'
+      reason: 'Install the official Claude CLI to enable Claude account login from AgentMesh.'
     }
-  ];
+  ]) {
+    let available = false;
+    try {
+      available = accountCliInstalled(item.provider);
+    } catch {
+      available = false;
+    }
+    capabilities.push({
+      provider: item.provider,
+      label: item.label,
+      status: available ? 'available' : 'unavailable',
+      ...(available ? {} : { reason: item.reason })
+    });
+  }
+
+  capabilities.push({
+    provider: 'gemini',
+    label: 'Gemini / Google',
+    status: 'unavailable',
+    reason: 'AgentMesh cannot reuse Gemini CLI account OAuth. Use the Gemini CLI itself for Google-account login, or use the Gemini API-key path in AgentMesh.'
+  });
+
+  return capabilities;
 }
