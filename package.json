@@ -1,6 +1,6 @@
 {
   "name": "@agentmesh/cli",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "A provider-agnostic multi-agent orchestration platform for the terminal.",
   "type": "module",
   "bin": { "agentmesh": "./dist/index.js" },
