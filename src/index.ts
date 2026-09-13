@@ -70,12 +70,13 @@ program.command('auth').description('Show provider authentication readiness with
       console.log(`${chalk.green('✓')} ${provider}: account login ready`);
     } else {
       console.log(`${apiReady ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${apiReady ? 'API key available' : 'API key missing'}${loginReady ? ` | developer login: ${loginReady.methods.join(', ')}` : ''}`);
-      if (accountConfigured) console.log(chalk.gray(`  ${provider}: official account CLI installed, but account login is not completed`));
+      if (accountConfigured) console.log(chalk.gray(`  ${provider}: official account CLI installed, but account login is not completed or runnable`));
     }
   }
   for (const provider of accountLoginProviders()) {
     if (!accountLoginAvailability(provider)) {
-      console.log(chalk.gray(`  ${provider}: install its official CLI for account login`));
+      const label = provider === 'openai' ? 'install a working official Codex CLI for your platform' : 'install the official CLI for account login';
+      console.log(chalk.gray(`  ${provider}: ${label}`));
     }
   }
 });
@@ -94,7 +95,7 @@ program.command('login [provider]')
         for (const name of ['openai', 'anthropic', 'gemini']) {
           const configured = accountProviders.includes(name);
           const available = configured && accountLoginAvailability(name);
-          console.log(`  ${available ? chalk.green('✓') : chalk.yellow('○')} ${name}: ${available ? 'account login ready' : configured ? 'official CLI not authenticated' : 'account login unavailable'}`);
+          console.log(`  ${available ? chalk.green('✓') : chalk.yellow('○')} ${name}: ${available ? 'account login ready' : configured ? 'official CLI not authenticated or not runnable' : 'account login unavailable'}`);
         }
         console.log(chalk.gray('\nUsage: agentmesh login openai | anthropic | gemini'));
         console.log(chalk.gray('Gemini account login cannot be delegated through AgentMesh because Google prohibits third-party piggybacking on Gemini CLI OAuth.'));
