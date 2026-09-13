@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { COMMANDS, parseInteractiveInput, runInteractiveCommand } from '../src/interactive.js';
+
+function withTempProject(run: (root: string) => Promise<void>): Promise<void> {
+  const root = mkdtempSync(join(tmpdir(), 'agentmesh-interactive-'));
+  writeFileSync(join(root, '.agentmesh.json'), JSON.stringify({ name: 'interactive-test', agents: [], activeAgent: null }, null, 2));
+  const previous = process.cwd();
+  process.chdir(root);
+  return run(root).finally(() => {
+    process.chdir(previous);
+    rmSync(root, { recursive: true, force: true });
+  });
+}
 
 test('interactive mode exposes the AI-first command set', () => {
   assert.ok(COMMANDS.includes('agents'));
@@ -28,7 +42,9 @@ test('slash commands are recognized case-insensitively', async () => {
 });
 
 test('normal text is treated as conversational input and remains recoverable without an active agent', async () => {
-  assert.equal(await runInteractiveCommand('build me a secure login flow', process.cwd()), true);
+  await withTempProject(async (root) => {
+    assert.equal(await runInteractiveCommand('build me a secure login flow', root), true);
+  });
 });
 
 test('unknown slash commands remain recoverable', async () => {
