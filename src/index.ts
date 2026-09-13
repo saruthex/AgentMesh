@@ -9,6 +9,7 @@ import { executeChat, initializeProviders } from './providers/manager.js';
 import { providerRegistry } from './providers/registry.js';
 import { providerAuthStatus, supportedAuthProviders } from './providers/auth.js';
 import { beginLogin, completeLogin, listLoginProviders, logout } from './auth/service.js';
+import { accountLoginAvailability, accountLoginProviders, startAccountLogin } from './auth/account-login.js';
 import type { ProviderMessage } from './providers/types.js';
 import { orchestrate } from './collaboration/orchestrator.js';
 import { workflowSummary } from './collaboration/workflow.js';
@@ -31,9 +32,7 @@ program.command('connect <provider>').option('-n, --name <name>').option('-m, --
   .description('Register an AI provider agent with this project')
   .action((provider: string, options) => {
     const supported = [...providerRegistry.list(), 'custom'];
-    if (!supported.includes(provider)) {
-      throw new Error(`Unsupported provider. Use: ${supported.join(', ')}`);
-    }
+    if (!supported.includes(provider)) throw new Error(`Unsupported provider. Use: ${supported.join(', ')}`);
     const role = (options.role ?? 'general') as AgentRole;
     if (!agentRoles.includes(role)) throw new Error(`Invalid role: ${role}. Use: ${agentRoles.join(', ')}`);
     const agent = connectAgent(provider, options.name, options.model, role);
@@ -64,121 +63,115 @@ program.command('providers').description('List available provider adapters').act
 program.command('auth').description('Show provider authentication readiness without exposing secrets').action(() => {
   for (const provider of supportedAuthProviders()) {
     const apiReady = providerAuthStatus(provider);
+    const accountReady = accountLoginProviders().includes(provider) && accountLoginAvailability(provider);
     const loginReady = loginRegistry.get(provider);
-    console.log(`${apiReady ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${apiReady ? 'API key available' : 'API key missing'}${loginReady ? ` | login: ${loginReady.methods.join(', ')}` : ''}`);
+    if (accountReady) {
+      console.log(`${chalk.green('✓')} ${provider}: account CLI available`);
+    } else {
+      console.log(`${apiReady ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${apiReady ? 'API key available' : 'API key missing'}${loginReady ? ` | developer login: ${loginReady.methods.join(', ')}` : ''}`);
+    }
   }
-  for (const provider of listLoginProviders()) {
-    console.log(chalk.cyan(`  ${provider}: ${loginStatusLine(provider)}`));
+  for (const provider of accountLoginProviders()) {
+    if (!accountLoginAvailability(provider)) console.log(chalk.gray(`  ${provider}: install its official CLI for account login`));
   }
 });
 
-function loginStatusLine(provider: string): string {
-  const statuses = listLoginProviders();
-  return statuses.includes(provider) ? 'login adapter available' : 'login adapter unavailable';
-}
-
 program.command('login [provider]')
-  .option('--method <method>', 'Authentication method (oauth or device)', 'oauth')
+  .option('--developer-oauth', 'Use the developer OAuth flow instead of account/CLI login')
   .option('--no-browser', 'Do not attempt to open the authorization URL automatically')
-  .description('Authenticate a provider using its official OAuth/device flow')
+  .description('Sign in with a provider account; no API key or client ID is required for account CLI login')
   .action(async (provider: string | undefined, options) => {
-    const target = provider ?? listLoginProviders()[0];
-    if (!target) throw new Error('No provider login adapters are installed.');
+    const accountProviders = accountLoginProviders();
+    const target = provider;
 
-    try {
-      const start = await beginLogin(target, options.method);
-      if (!start.authorizationUrl) throw new Error(`Login adapter for ${target} did not return an authorization URL.`);
-
-      console.log(chalk.cyan(`Open this URL to authenticate ${target}:`));
-      console.log(start.authorizationUrl);
-
-      const adapter = loginRegistry.get(target) as { openAuthorizationUrl?: (url: string) => Promise<boolean> } | undefined;
-      if (options.browser !== false && adapter?.openAuthorizationUrl) {
-        const opened = await adapter.openAuthorizationUrl(start.authorizationUrl);
-        console.log(opened ? chalk.green('✓ Authorization URL opened') : chalk.yellow('○ Could not open browser automatically; use the URL above.'));
-      }
-
-      console.log(chalk.gray('Waiting for the provider OAuth callback...'));
-      const result = await completeLogin(target, {});
-      console.log(chalk.green(`✓ Logged in to ${result.provider}${result.accountLabel ? ` as ${result.accountLabel}` : ''}`));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (target === 'gemini' && message.includes('GEMINI_OAUTH_CLIENT_ID')) {
-        console.error(chalk.yellow('Gemini login needs a Google OAuth Desktop client before the first login.'));
-        console.error('Set these environment variables, then run `agentmesh login gemini` again:');
-        console.error('  GEMINI_OAUTH_CLIENT_ID=<your Google OAuth client ID>');
-        console.error('  GEMINI_OAUTH_CLIENT_SECRET=<your client secret, if required>');
-        console.error('  GEMINI_PROJECT_ID=<your Google Cloud project ID>');
-        console.error(chalk.gray('AgentMesh does not collect or store these values in the project.'));
-        process.exitCode = 1;
+    if (!options.developerOauth) {
+      if (!target) {
+        console.log(chalk.bold('Account sign-in'));
+        for (const name of ['openai', 'anthropic', 'gemini']) {
+          const available = accountProviders.includes(name) && accountLoginAvailability(name);
+          console.log(`  ${available ? chalk.green('✓') : chalk.yellow('○')} ${name}: ${available ? 'account login available' : 'account login unavailable'}`);
+        }
+        console.log(chalk.gray('\nUsage: agentmesh login openai | anthropic | gemini'));
+        console.log(chalk.gray('Gemini account login cannot be delegated through AgentMesh because Google prohibits third-party piggybacking on Gemini CLI OAuth.'));
         return;
       }
-      throw error;
+
+      if (target === 'gemini') {
+        throw new Error('Gemini account login must be performed in Gemini CLI itself. AgentMesh cannot reuse Gemini CLI OAuth credentials. Use `gemini` to sign in with Google, or use the Gemini API-key path in AgentMesh.');
+      }
+
+      if (!accountProviders.includes(target)) throw new Error(`Unsupported account provider: ${target}`);
+      await startAccountLogin(target);
+      console.log(chalk.green(`✓ ${target} account login completed`));
+      console.log(chalk.gray('AgentMesh does not copy or store the provider CLI credentials.'));
+      return;
     }
+
+    const loginProviders = listLoginProviders();
+    const oauthTarget = target ?? loginProviders[0];
+    if (!oauthTarget) throw new Error('No developer OAuth login adapters are installed.');
+    const start = await beginLogin(oauthTarget, 'oauth');
+    if (!start.authorizationUrl) throw new Error(`Login adapter for ${oauthTarget} did not return an authorization URL.`);
+    console.log(chalk.cyan(`Open this URL to authenticate ${oauthTarget}:`));
+    console.log(start.authorizationUrl);
+    const adapter = loginRegistry.get(oauthTarget) as { openAuthorizationUrl?: (url: string) => Promise<boolean> } | undefined;
+    if (options.browser !== false && adapter?.openAuthorizationUrl) {
+      const opened = await adapter.openAuthorizationUrl(start.authorizationUrl);
+      console.log(opened ? chalk.green('✓ Authorization URL opened') : chalk.yellow('○ Could not open browser automatically; use the URL above.'));
+    }
+    console.log(chalk.gray('Waiting for the provider OAuth callback...'));
+    const result = await completeLogin(oauthTarget, {});
+    console.log(chalk.green(`✓ Logged in to ${result.provider}${result.accountLabel ? ` as ${result.accountLabel}` : ''}`));
   });
 
-program.command('logout <provider>').description('Remove the locally stored login credential for a provider').action((provider: string) => {
+program.command('logout <provider>').description('Remove the locally stored AgentMesh login credential for a provider').action((provider: string) => {
   const removed = logout(provider);
-  console.log(removed ? chalk.green(`✓ Logged out of ${provider}`) : chalk.yellow(`No stored login for ${provider}`));
+  console.log(removed ? chalk.green(`✓ Logged out of ${provider}`) : chalk.yellow(`No stored AgentMesh login for ${provider}`));
 });
 
 program.command('chat <message>')
   .option('-p, --provider <provider>', 'Override the active agent provider')
+  .option('--api', 'Force API-key authentication instead of an available provider account CLI')
   .description('Send a message through the active provider and persist shared context')
   .action(async (message: string, options) => {
     const root = findProjectRoot(process.cwd());
     if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
-
     const config = readProjectConfig(root);
     if (!config.activeAgent) throw new Error('No active agent. Run: agentmesh connect <provider>');
-
     const activeAgent = config.agents.find(agent => agent.id === config.activeAgent);
     if (!activeAgent) throw new Error('Active agent configuration is invalid.');
-
     const providerId = options.provider ?? activeAgent.provider;
     const resolvedProvider = providerId === 'custom' ? 'mock' : providerId;
-
     addMessage({ role: 'user', content: message, agentId: activeAgent.id });
-    const history: ProviderMessage[] = loadContext().map(item => ({
-      role: item.role === 'agent' ? 'assistant' : item.role,
-      content: item.content
-    }));
-
-    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model });
+    const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
+    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model, authMode: options.api ? 'api' : 'account' });
     addMessage({ role: 'agent', content: response.content, agentId: activeAgent.id });
-
     console.log(chalk.green('✓ Message processed'));
     console.log(chalk.bold(response.content));
   });
 
-program.command('plan <task>')
-  .description('Show the role-based workflow AgentMesh would use for a task')
-  .action((task: string) => {
-    const root = findProjectRoot(process.cwd());
-    if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
-    const config = readProjectConfig(root);
-    const steps = workflowSummary(task, config.agents);
-    console.log(chalk.bold('AgentMesh workflow plan'));
-    console.log(chalk.gray(`Task: ${task}`));
-    for (const step of steps) console.log(`• ${step}`);
-  });
+program.command('plan <task>').description('Show the role-based workflow AgentMesh would use for a task').action((task: string) => {
+  const root = findProjectRoot(process.cwd());
+  if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
+  const config = readProjectConfig(root);
+  const steps = workflowSummary(task, config.agents);
+  console.log(chalk.bold('AgentMesh workflow plan'));
+  console.log(chalk.gray(`Task: ${task}`));
+  for (const step of steps) console.log(`• ${step}`);
+});
 
 program.command('swarm <task>')
   .option('-a, --agents <agents>', 'Comma-separated agent names or IDs')
   .option('--no-synthesize', 'Skip the final combined answer')
   .description('Run a task through multiple agents sequentially using shared context')
   .action(async (task: string, options) => {
-    const selectors = options.agents
-      ? String(options.agents).split(',').map((value: string) => value.trim()).filter(Boolean)
-      : undefined;
-
+    const selectors = options.agents ? String(options.agents).split(',').map((value: string) => value.trim()).filter(Boolean) : undefined;
     const results = await orchestrate(task, selectors);
     console.log(chalk.green(`✓ Orchestration completed with ${results.length} agent(s)`));
     for (const result of results) {
       console.log(chalk.cyan(`\n[${result.agent.name}]`));
       console.log(result.content);
     }
-
     if (options.synthesize) {
       const finalAnswer = await synthesizeResults(task, results);
       if (finalAnswer) {
