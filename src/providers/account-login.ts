@@ -7,6 +7,22 @@ export interface AccountLoginChoice {
   reason?: string;
 }
 
+/** Compatibility contract for the original account-login registry. */
+export interface AccountLoginStartResult {
+  provider: string;
+  supported: boolean;
+  reason?: string;
+}
+
+export interface AccountLoginAdapter {
+  readonly provider: string;
+  start(): Promise<AccountLoginStartResult>;
+}
+
+export function unsupportedAccountLogin(provider: string, reason: string): AccountLoginStartResult {
+  return { provider, supported: false, reason };
+}
+
 export function accountLoginChoices(): AccountLoginChoice[] {
   return accountAuthCapabilities().map(capability => ({
     provider: capability.provider,
