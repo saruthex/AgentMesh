@@ -3,6 +3,7 @@ import { GeminiOAuthAdapter } from './gemini-oauth.js';
 import { GeminiProviderAdapter } from './gemini.js';
 import { MockProviderAdapter } from './mock.js';
 import { OpenAIProviderAdapter } from './openai.js';
+import { executeAccountCli, accountCliInstalled } from './account-cli.js';
 import { providerRegistry } from './registry.js';
 import { loginRegistry } from './login-registry.js';
 import type { ChatResponse, ProviderMessage } from './types.js';
@@ -22,6 +23,7 @@ export function initializeProviders(): void {
 export interface ExecuteChatOptions {
   model?: string;
   retries?: number;
+  authMode?: 'account' | 'api';
 }
 
 function isTransientError(error: unknown): boolean {
@@ -33,12 +35,28 @@ function wait(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function canUseAccountCli(providerId: string): boolean {
+  if (providerId !== 'openai' && providerId !== 'anthropic') return false;
+  try { return accountCliInstalled(providerId); } catch { return false; }
+}
+
 export async function executeChat(
   providerId: string,
   messages: ProviderMessage[],
   options: ExecuteChatOptions = {}
 ): Promise<ChatResponse> {
   initializeProviders();
+
+  if (options.authMode !== 'api' && canUseAccountCli(providerId)) {
+    try {
+      return await executeAccountCli(providerId, messages, options.model);
+    } catch (error) {
+      if (options.authMode === 'account') throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (/login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) throw error;
+    }
+  }
+
   const provider = providerRegistry.get(providerId);
   if (!provider) {
     throw new Error(`Provider adapter not configured: ${providerId}. Available adapters: ${providerRegistry.list().join(', ')}`);
