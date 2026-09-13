@@ -20,5 +20,18 @@
     "@types/node": "^22.13.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
-  }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saruthex/AgentMesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/saruthex/AgentMesh/issues"
+  },
+  "homepage": "https://github.com/saruthex/AgentMesh#readme",
+  "license": "MIT",
+  "keywords": ["ai", "agents", "cli", "orchestration", "multi-agent"]
 }
