@@ -1,7 +1,7 @@
 import { executeChat } from '../providers/manager.js';
 import type { ProviderMessage } from '../providers/types.js';
 import type { OrchestrationResult } from './orchestrator.js';
-import { selectSynthesisAgent } from './synthesis-preference.js';
+import { selectSynthesisAgent } from '../providers/synthesis-preference.js';
 
 type AuthMode = 'account' | 'api';
 
@@ -11,7 +11,7 @@ function authModeFor(provider: string, requested: AuthMode): AuthMode {
 }
 
 export async function synthesizeResults(task: string, results: OrchestrationResult[], requestedAuthMode: AuthMode = 'account'): Promise<string | undefined> {
-  const preferred = selectSynthesisAgent(results, []);
+  const preferred = selectSynthesisAgent(results);
   if (!preferred) return undefined;
 
   const provider = preferred.provider === 'custom' ? 'mock' : preferred.provider;
