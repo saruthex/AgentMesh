@@ -36,10 +36,13 @@ function specFor(provider: string): AccountCliSpec {
   return spec;
 }
 
-export function accountCliInstalled(provider: string): boolean {
-  const spec = specFor(provider);
-  const result = spawnSync(spec.command, ['--version'], { stdio: 'ignore', shell: false });
+function commandAvailable(command: string): boolean {
+  const result = spawnSync(command, ['--version'], { stdio: 'ignore', shell: false });
   return result.status === 0;
+}
+
+export function accountCliInstalled(provider: string): boolean {
+  return commandAvailable(specFor(provider).command);
 }
 
 export function accountCliLogin(provider: string): Promise<void> {
@@ -85,4 +88,19 @@ export function executeAccountCli(provider: string, messages: ProviderMessage[],
 
 export function accountCliProviders(): string[] {
   return Object.keys(SPECS);
+}
+
+export function accountCliAuthenticated(provider: string): boolean {
+  const command = specFor(provider).command;
+  if (!commandAvailable(command)) return false;
+
+  // Codex exposes a non-interactive account status command. For Claude Code
+  // there is no portable non-interactive status API we can safely depend on,
+  // so installation remains the only supported readiness signal.
+  if (provider === 'openai') {
+    const result = spawnSync(command, ['login', 'status'], { stdio: 'ignore', shell: false });
+    return result.status === 0;
+  }
+
+  return true;
 }
