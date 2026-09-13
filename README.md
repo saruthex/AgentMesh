@@ -16,38 +16,71 @@ cd my-project
 node ../dist/index.js
 ```
 
-The last command opens the interactive terminal workspace. No graphical interface is required.
+The last command opens the AI-first interactive terminal. No graphical interface is required. Once you are inside, normal text is sent directly to the active agent; slash commands control the workspace.
 
-## Interactive terminal
+## AI-first interactive terminal
 
-Inside a project, run `agentmesh` (or `node ../dist/index.js`) to get a persistent prompt:
+The goal is a Codex-style terminal experience: talk to AgentMesh instead of typing `chat` before every message.
 
 ```text
 ╭──────────────────────────────────────────╮
 │               AGENTMESH                  │
-│        Multi-Agent Terminal Workspace    │
+│          AI Multi-Agent Terminal         │
 ╰──────────────────────────────────────────╯
 Project: my-project
 Agents: 2  Context: 4
 
-agentmesh> agents
-agentmesh> switch architect
-agentmesh> chat
-agentmesh> plan "build authentication"
-agentmesh> swarm "design the authentication flow"
-agentmesh> history
-agentmesh> exit
+You › Explain how to structure this authentication system.
+
+architect> ...
+
+You › /agents
+● architect  openai  architect  active
+○ reviewer   mock      reviewer
+
+You › /switch reviewer
+✓ Active agent: reviewer
+
+You › Review the previous answer and find security gaps.
+
+reviewer> ...
+
+You › /swarm Design and review the complete authentication flow.
+
+You › /history
+
+You › /exit
+Goodbye 👋
 ```
 
-You can also explicitly launch it with:
+### Slash commands
+
+```text
+/agents
+/connect <provider> [name] [role]
+/switch <agent>
+/plan <task>
+/swarm <task>
+/swarm --no-synthesize <task>
+/history
+/status
+/providers
+/auth
+/login <provider>
+/logout <provider>
+/help
+/exit
+```
+
+Normal text is always treated as conversation. The legacy `/chat <message>` form is still accepted inside the workspace for compatibility, while the normal CLI command `agentmesh chat "..."` remains available for scripts and automation.
+
+You can also explicitly launch the workspace with:
 
 ```bash
 agentmesh interactive
 # or
 agentmesh ui
 ```
-
-The existing non-interactive commands remain available, so scripts and automation are not affected.
 
 ## Core commands
 
