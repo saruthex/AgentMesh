@@ -10,6 +10,7 @@ import { providerRegistry } from './providers/registry.js';
 import { providerAuthStatus, supportedAuthProviders } from './providers/auth.js';
 import { beginLogin, completeLogin, listLoginProviders, logout } from './auth/service.js';
 import { accountLoginAvailability, accountLoginProviders, startAccountLogin } from './auth/account-login.js';
+import { accountCliLogout } from './providers/account-cli.js';
 import type { ProviderMessage } from './providers/types.js';
 import { orchestrate } from './collaboration/orchestrator.js';
 import { workflowSummary } from './collaboration/workflow.js';
@@ -70,12 +71,12 @@ program.command('auth').description('Show provider authentication readiness with
       console.log(`${chalk.green('✓')} ${provider}: account login ready`);
     } else {
       console.log(`${apiReady ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${apiReady ? 'API key available' : 'API key missing'}${loginReady ? ` | developer login: ${loginReady.methods.join(', ')}` : ''}`);
-      if (accountConfigured) console.log(chalk.gray(`  ${provider}: official account CLI installed, but account login is not completed or runnable`));
+      if (accountConfigured) console.log(chalk.gray(`  ${provider}: provider account CLI installed, but account login is not completed or runnable`));
     }
   }
   for (const provider of accountLoginProviders()) {
     if (!accountLoginAvailability(provider)) {
-      const label = provider === 'openai' ? 'install a working official Codex CLI for your platform' : 'install the official CLI for account login';
+      const label = provider === 'openai' ? 'install a provider-compatible Codex CLI for your platform' : 'install the official CLI for account login';
       console.log(chalk.gray(`  ${provider}: ${label}`));
     }
   }
@@ -95,7 +96,7 @@ program.command('login [provider]')
         for (const name of ['openai', 'anthropic', 'gemini']) {
           const configured = accountProviders.includes(name);
           const available = configured && accountLoginAvailability(name);
-          console.log(`  ${available ? chalk.green('✓') : chalk.yellow('○')} ${name}: ${available ? 'account login ready' : configured ? 'official CLI not authenticated or not runnable' : 'account login unavailable'}`);
+          console.log(`  ${available ? chalk.green('✓') : chalk.yellow('○')} ${name}: ${available ? 'account login ready' : configured ? 'provider CLI not authenticated or not runnable' : 'account login unavailable'}`);
         }
         console.log(chalk.gray('\nUsage: agentmesh login openai | anthropic | gemini'));
         console.log(chalk.gray('Gemini account login cannot be delegated through AgentMesh because Google prohibits third-party piggybacking on Gemini CLI OAuth.'));
@@ -130,9 +131,23 @@ program.command('login [provider]')
     console.log(chalk.green(`✓ Logged in to ${result.provider}${result.accountLabel ? ` as ${result.accountLabel}` : ''}`));
   });
 
-program.command('logout <provider>').description('Remove the locally stored AgentMesh login credential for a provider').action((provider: string) => {
+program.command('logout <provider>').description('Log out of a provider account and remove any locally stored AgentMesh credential').action(async (provider: string) => {
+  const accountProviders = accountLoginProviders();
+  if (accountProviders.includes(provider) && accountLoginAvailability(provider)) {
+    try {
+      await accountCliLogout(provider);
+      console.log(chalk.green(`✓ Logged out of ${provider} account`));
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(chalk.red(`✗ ${message}`));
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   const removed = logout(provider);
-  console.log(removed ? chalk.green(`✓ Logged out of ${provider}`) : chalk.yellow(`No stored AgentMesh login for ${provider}`));
+  console.log(removed ? chalk.green(`✓ Removed stored AgentMesh login for ${provider}`) : chalk.yellow(`No stored AgentMesh login for ${provider}`));
 });
 
 program.command('chat <message>')
