@@ -41,12 +41,26 @@ function commandAvailable(command: string): boolean {
   return result.status === 0;
 }
 
+function commandBroken(command: string): boolean {
+  const result = spawnSync(command, ['--version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    shell: false
+  });
+  if (result.status === 0) return false;
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  return /missing optional dependency|cannot find module|module not found|no such file or directory/i.test(output);
+}
+
 export function accountCliInstalled(provider: string): boolean {
   return commandAvailable(specFor(provider).command);
 }
 
 export function accountCliLogin(provider: string): Promise<void> {
   const spec = specFor(provider);
+  if (commandBroken(spec.command)) {
+    throw new Error(`${spec.command} is installed but not runnable in this environment. Reinstall or use a provider CLI build compatible with your platform (for example, a Termux/Android build on ARM64).`);
+  }
   return new Promise((resolve, reject) => {
     const child = spawn(spec.command, spec.loginArgs, { stdio: 'inherit', shell: false });
     child.once('error', error => reject(new Error(`Unable to start ${spec.command}: ${error.message}`)));
