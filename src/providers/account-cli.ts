@@ -6,6 +6,7 @@ interface AccountCliSpec {
   command: string;
   envCommand?: string;
   loginArgs: string[];
+  logoutArgs?: string[];
   promptArgs: (prompt: string) => string[];
   modelArgs?: (model: string) => string[];
 }
@@ -27,6 +28,7 @@ const SPECS: Record<string, AccountCliSpec> = {
     command: 'codex',
     envCommand: 'AGENTMESH_OPENAI_CLI',
     loginArgs: ['login'],
+    logoutArgs: ['logout'],
     promptArgs: prompt => ['exec', '--ephemeral', prompt],
     modelArgs: model => ['--model', model]
   }
@@ -72,6 +74,19 @@ export function accountCliLogin(provider: string): Promise<void> {
     const child = spawn(command, spec.loginArgs, { stdio: 'inherit', shell: false });
     child.once('error', error => reject(new Error(`Unable to start ${command}: ${error.message}`)));
     child.once('exit', code => code === 0 ? resolve() : reject(new Error(`${command} login exited with code ${code ?? 'unknown'}.`)));
+  });
+}
+
+export function accountCliLogout(provider: string): Promise<void> {
+  const spec = specFor(provider);
+  const command = commandFor(spec);
+  if (!spec.logoutArgs?.length) {
+    throw new Error(`The ${provider} account CLI does not expose a supported logout command.`);
+  }
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, spec.logoutArgs, { stdio: 'inherit', shell: false });
+    child.once('error', error => reject(new Error(`Unable to start ${command}: ${error.message}`)));
+    child.once('exit', code => code === 0 ? resolve() : reject(new Error(`${command} logout exited with code ${code ?? 'unknown'}.`)));
   });
 }
 
