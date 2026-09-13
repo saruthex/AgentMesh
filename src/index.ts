@@ -8,10 +8,12 @@ import { addMessage, loadContext } from './context/store.js';
 import { executeChat, initializeProviders } from './providers/manager.js';
 import { providerRegistry } from './providers/registry.js';
 import { providerAuthStatus, supportedAuthProviders } from './providers/auth.js';
+import { beginLogin, completeLogin, listLoginProviders, logout } from './auth/service.js';
 import type { ProviderMessage } from './providers/types.js';
 import { orchestrate } from './collaboration/orchestrator.js';
 import { workflowSummary } from './collaboration/workflow.js';
 import { synthesizeResults } from './collaboration/synthesis.js';
+import { loginRegistry } from './providers/login-registry.js';
 
 initializeProviders();
 
@@ -60,9 +62,47 @@ program.command('providers').description('List available provider adapters').act
 
 program.command('auth').description('Show provider authentication readiness without exposing secrets').action(() => {
   for (const provider of supportedAuthProviders()) {
-    const ready = providerAuthStatus(provider);
-    console.log(`${ready ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${ready ? 'API key available' : 'API key missing'}`);
+    const apiReady = providerAuthStatus(provider);
+    const loginReady = loginRegistry.get(provider);
+    console.log(`${apiReady ? chalk.green('✓') : chalk.yellow('○')} ${provider}: ${apiReady ? 'API key available' : 'API key missing'}${loginReady ? ` | login: ${loginReady.methods.join(', ')}` : ''}`);
   }
+  for (const provider of listLoginProviders()) {
+    console.log(chalk.cyan(`  ${provider}: ${loginStatusLine(provider)}`));
+  }
+});
+
+function loginStatusLine(provider: string): string {
+  const statuses = listLoginProviders();
+  return statuses.includes(provider) ? 'login adapter available' : 'login adapter unavailable';
+}
+
+program.command('login [provider]')
+  .option('--method <method>', 'Authentication method (oauth or device)', 'oauth')
+  .option('--no-browser', 'Do not attempt to open the authorization URL automatically')
+  .description('Authenticate a provider using its official OAuth/device flow')
+  .action(async (provider: string | undefined, options) => {
+    const target = provider ?? listLoginProviders()[0];
+    if (!target) throw new Error('No provider login adapters are installed.');
+    const start = await beginLogin(target, options.method);
+    if (!start.authorizationUrl) throw new Error(`Login adapter for ${target} did not return an authorization URL.`);
+
+    console.log(chalk.cyan(`Open this URL to authenticate ${target}:`));
+    console.log(start.authorizationUrl);
+
+    const adapter = loginRegistry.get(target) as { openAuthorizationUrl?: (url: string) => Promise<boolean> } | undefined;
+    if (options.browser !== false && adapter?.openAuthorizationUrl) {
+      const opened = await adapter.openAuthorizationUrl(start.authorizationUrl);
+      console.log(opened ? chalk.green('✓ Authorization URL opened') : chalk.yellow('○ Could not open browser automatically; use the URL above.'));
+    }
+
+    console.log(chalk.gray('Waiting for the provider OAuth callback...'));
+    const result = await completeLogin(target, {});
+    console.log(chalk.green(`✓ Logged in to ${result.provider}${result.accountLabel ? ` as ${result.accountLabel}` : ''}`));
+  });
+
+program.command('logout <provider>').description('Remove the locally stored login credential for a provider').action((provider: string) => {
+  const removed = logout(provider);
+  console.log(removed ? chalk.green(`✓ Logged out of ${provider}`) : chalk.yellow(`No stored login for ${provider}`));
 });
 
 program.command('chat <message>')
