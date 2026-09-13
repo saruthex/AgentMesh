@@ -3,26 +3,27 @@ import type { ProviderMessage } from '../providers/types.js';
 import type { OrchestrationResult } from './orchestrator.js';
 
 export async function synthesizeResults(task: string, results: OrchestrationResult[]): Promise<string | undefined> {
-  if (!results.length) return undefined;
+  const successfulResults = results.filter(result => result.success);
+  if (!successfulResults.length) return undefined;
 
-  const preferred = results.find(result => result.agent.role === 'reviewer')?.agent
-    ?? results[results.length - 1]?.agent;
+  const preferred = successfulResults.find(result => result.agent.role === 'reviewer')?.agent
+    ?? successfulResults[successfulResults.length - 1]?.agent;
 
   if (!preferred) return undefined;
 
   const provider = preferred.provider === 'custom' ? 'mock' : preferred.provider;
-  const contributions = results
+  const contributions = successfulResults
     .map(result => `[${result.agent.name} — ${result.agent.role ?? 'general'}]\n${result.content}`)
     .join('\n\n');
 
   const messages: ProviderMessage[] = [
     {
       role: 'system',
-      content: 'You are the final synthesizer for an AgentMesh collaboration. Combine the agent contributions into one concise, practical answer. Preserve important disagreements and recommendations instead of blindly merging them.'
+      content: 'You are the final synthesizer for an AgentMesh collaboration. Combine the successful agent contributions into one concise, practical answer. Do not treat failed agents as evidence or recommendations.'
     },
     {
       role: 'user',
-      content: `Task: ${task}\n\nAgent contributions:\n\n${contributions}`
+      content: `Task: ${task}\n\nSuccessful agent contributions:\n\n${contributions}`
     }
   ];
 
