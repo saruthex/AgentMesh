@@ -1,8 +1,10 @@
 import { AnthropicProviderAdapter } from './anthropic.js';
+import { GeminiOAuthAdapter } from './gemini-oauth.js';
 import { GeminiProviderAdapter } from './gemini.js';
 import { MockProviderAdapter } from './mock.js';
 import { OpenAIProviderAdapter } from './openai.js';
 import { providerRegistry } from './registry.js';
+import { loginRegistry } from './login-registry.js';
 import type { ChatResponse, ProviderMessage } from './types.js';
 
 let initialized = false;
@@ -13,6 +15,7 @@ export function initializeProviders(): void {
   providerRegistry.register(new OpenAIProviderAdapter());
   providerRegistry.register(new AnthropicProviderAdapter());
   providerRegistry.register(new GeminiProviderAdapter());
+  loginRegistry.register(new GeminiOAuthAdapter());
   initialized = true;
 }
 
