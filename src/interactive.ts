@@ -213,6 +213,6 @@ export async function startInteractiveMode(): Promise<void> {
       try { running = await runInteractiveCommand(line, root); }
       catch (error) { console.log(chalk.red(`✗ ${error instanceof Error ? error.message : String(error)}`)); }
     }
-  } finally { rl.off('SIGINT', onSigINT); rl.close(); }
+  } finally { rl.off('SIGINT', onSigint); rl.close(); }
   console.log(chalk.gray('Goodbye 👋'));
 }
