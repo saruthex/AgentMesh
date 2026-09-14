@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
+import process from 'node:process';
 import type { ChatResponse, ProviderMessage } from './types.js';
+import { emitActivity } from '../workspace/activity.js';
 
 interface AccountCliSpec {
   provider: string;
@@ -11,10 +13,6 @@ interface AccountCliSpec {
   modelArgs?: (model: string) => string[];
 }
 
-// These bridges delegate to provider-owned CLIs without reading or copying
-// their credentials. Gemini is intentionally excluded because Google's
-// Gemini CLI terms prohibit third-party software from piggybacking on its
-// OAuth/backend services.
 const SPECS: Record<string, AccountCliSpec> = {
   anthropic: {
     provider: 'anthropic',
@@ -84,9 +82,7 @@ export function accountCliLogout(provider: string): Promise<void> {
   const spec = specFor(provider);
   const command = commandFor(spec);
   const args = spec.logoutArgs;
-  if (!args?.length) {
-    throw new Error(`The ${provider} account CLI does not expose a supported logout command.`);
-  }
+  if (!args?.length) throw new Error(`The ${provider} account CLI does not expose a supported logout command.`);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: 'inherit', shell: false });
     child.once('error', (error: Error) => reject(new Error(`Unable to start ${command}: ${error.message}`)));
@@ -99,16 +95,46 @@ function buildPrompt(messages: ProviderMessage[]): string {
 }
 
 export function executeAccountCli(provider: string, messages: ProviderMessage[], model?: string): Promise<ChatResponse> {
+  return executeAccountCliInternal(provider, messages, model, false);
+}
+
+/**
+ * Run a provider-owned coding CLI in the AgentMesh project directory.
+ * The CLI itself owns the filesystem/tool execution model, so AgentMesh does
+ * not need to copy credentials or expose a second token path.
+ */
+export function executeAccountCliWorkspace(provider: string, messages: ProviderMessage[], model?: string, cwd = process.cwd()): Promise<ChatResponse> {
+  return executeAccountCliInternal(provider, messages, model, true, cwd);
+}
+
+function executeAccountCliInternal(
+  provider: string,
+  messages: ProviderMessage[],
+  model: string | undefined,
+  workspaceMode: boolean,
+  cwd = process.cwd()
+): Promise<ChatResponse> {
   const spec = specFor(provider);
   const command = commandFor(spec);
   const prompt = buildPrompt(messages);
-  const args = [...spec.promptArgs(prompt), ...(model && spec.modelArgs ? spec.modelArgs(model) : [])];
+  const baseArgs = spec.promptArgs(prompt);
+  const args = workspaceMode && provider === 'openai'
+    ? [...baseArgs, '-s', 'workspace-write', '--ask-for-approval', 'never', ...(model && spec.modelArgs ? spec.modelArgs(model) : [])]
+    : [...baseArgs, ...(model && spec.modelArgs ? spec.modelArgs(model) : [])];
 
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: false });
+    emitActivity({ kind: 'working', message: workspaceMode ? 'Working in workspace…' : 'Thinking…' });
+    const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], shell: false });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', chunk => { stdout += chunk.toString(); });
+    child.stdout.on('data', chunk => {
+      const text = chunk.toString();
+      stdout += text;
+      if (workspaceMode) {
+        const lines = text.split(/\r?\n/).map((line: string) => line.trim()).filter(Boolean);
+        for (const line of lines.slice(-3)) emitActivity({ kind: 'tool', message: line.slice(0, 140) });
+      }
+    });
     child.stderr.on('data', chunk => { stderr += chunk.toString(); });
     child.once('error', error => reject(new Error(`Unable to start ${command}: ${error.message}`)));
     child.once('exit', code => {
@@ -122,6 +148,7 @@ export function executeAccountCli(provider: string, messages: ProviderMessage[],
         reject(new Error(`${command} returned an empty response.`));
         return;
       }
+      emitActivity({ kind: 'done', message: 'Done' });
       resolve({ content, model });
     });
   });
@@ -134,14 +161,9 @@ export function accountCliProviders(): string[] {
 export function accountCliAuthenticated(provider: string): boolean {
   const command = commandFor(specFor(provider));
   if (!commandAvailable(command)) return false;
-
-  // Codex exposes a non-interactive account status command. For Claude Code
-  // there is no portable non-interactive status API we can safely depend on,
-  // so installation remains the only supported readiness signal.
   if (provider === 'openai') {
     const result = spawnSync(command, ['login', 'status'], { stdio: 'ignore', shell: false });
     return result.status === 0;
   }
-
   return true;
 }
