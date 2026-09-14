@@ -6,7 +6,7 @@ export type WorkspaceWriteMode = 'workspace';
 
 export interface WorkspaceEntry {
   path: string;
-  type: 'file' | 'directory';
+  type: 'file' | 'directory' | 'symlink';
   size?: number;
 }
 
@@ -22,7 +22,32 @@ function assertInside(root: string, target: string): string {
   if (resolved !== normalizedRoot && !resolved.startsWith(normalizedRoot + path.sep)) {
     throw new Error(`Workspace access denied: path escapes project root: ${target}`);
   }
+  assertNoSymlinks(normalizedRoot, resolved);
   return resolved;
+}
+
+/**
+ * A lexical path check alone is not sufficient: a path such as
+ * `workspace/link/secret.txt` can still escape if `link` is a symlink. Reject
+ * symlinks in every existing component so reads, writes, and deletes all keep
+ * their promise of staying inside the workspace.
+ */
+function assertNoSymlinks(root: string, target: string): void {
+  const relative = path.relative(root, target);
+  if (!relative) return;
+
+  let current = root;
+  for (const component of relative.split(path.sep)) {
+    current = path.join(current, component);
+    try {
+      if (fs.lstatSync(current).isSymbolicLink()) {
+        throw new Error(`Workspace access denied: path contains a symbolic link: ${relative}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') break;
+      throw error;
+    }
+  }
 }
 
 export function getWorkspacePolicy(cwd = process.cwd()): WorkspacePolicy {
@@ -42,8 +67,9 @@ export function listWorkspace(relativePath = '.', cwd = process.cwd()): Workspac
   if (!fs.statSync(dir).isDirectory()) throw new Error(`Workspace path is not a directory: ${relativePath}`);
   return fs.readdirSync(dir, { withFileTypes: true }).map(entry => {
     const full = path.join(dir, entry.name);
-    const stat = fs.statSync(full);
-    return { path: path.relative(getWorkspacePolicy(cwd).root, full) || '.', type: entry.isDirectory() ? 'directory' : 'file', size: entry.isFile() ? stat.size : undefined };
+    const stat = fs.lstatSync(full);
+    const type = stat.isSymbolicLink() ? 'symlink' : stat.isDirectory() ? 'directory' : 'file';
+    return { path: path.relative(getWorkspacePolicy(cwd).root, full) || '.', type, size: stat.isFile() ? stat.size : undefined };
   });
 }
 

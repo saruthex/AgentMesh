@@ -18,3 +18,13 @@ test('workspace tool requests do not fall through to account CLI auth', async ()
     else process.env.OPENAI_API_KEY = previous;
   }
 });
+
+test('account-mode workspace errors name the selected provider', async () => {
+  await assert.rejects(
+    () => executeChat('anthropic', [{ role: 'user', content: 'create index.html' }], {
+      authMode: 'account',
+      enableWorkspaceTools: true
+    }),
+    /anthropic account mode is not available/
+  );
+});

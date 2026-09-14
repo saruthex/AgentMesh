@@ -107,9 +107,9 @@ export async function executeChat(providerId: string, messages: ProviderMessage[
     // cannot participate in structured AgentMesh tool calls. Avoid the misleading
     // "workspace is read-only" behavior and state the actual requirement.
     if (accountCapable) {
-      throw new Error(`OpenAI account login is available, but workspace file tools require a tool-capable API connection. Set OPENAI_API_KEY (or use an AgentMesh account adapter that exposes tool calls) for file-writing tasks.`);
+      throw new Error(`${providerId} account login is available, but workspace file tools require a tool-capable API connection. Configure its API key (or use an AgentMesh account adapter that exposes tool calls) for file-writing tasks.`);
     }
-    throw new Error(`OpenAI account mode is not available. Run \`agentmesh auth\` to check authentication, or configure OPENAI_API_KEY for workspace file tools.`);
+    throw new Error(`${providerId} account mode is not available. Run \`agentmesh auth\` to check authentication, or configure that provider's API key for workspace file tools.`);
   }
 
   const retries = options.retries ?? 1;
