@@ -10,11 +10,11 @@ import { executeChat } from './providers/manager.js';
 import { orchestrate } from './collaboration/orchestrator.js';
 import { workflowSummary } from './collaboration/workflow.js';
 import { synthesizeResults } from './collaboration/synthesis.js';
+import { runWithActivity } from './workspace/ui.js';
 import type { ProviderMessage } from './providers/types.js';
 import type { AgentRole } from './agents/types.js';
 
 export const SLASH_COMMANDS = ['help', 'status', 'agents', 'providers', 'auth', 'connect', 'switch', 'plan', 'swarm', 'history', 'login', 'logout', 'exit', 'quit'] as const;
-/** Backwards-compatible command list for consumers/tests. */
 export const COMMANDS = [...SLASH_COMMANDS, 'chat'] as const;
 
 export function parseInteractiveInput(input: string): string[] {
@@ -97,7 +97,7 @@ async function chatOnce(message: string): Promise<void> {
   const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
   addMessage({ role: 'user', content: message, agentId: agent.id });
   try {
-    const response = await executeChat(resolvedProvider, [...history, { role: 'user', content: message }], { model: agent.model, authMode });
+    const response = await runWithActivity(() => executeChat(resolvedProvider, [...history, { role: 'user', content: message }], { model: agent.model, authMode }));
     addMessage({ role: 'agent', content: response.content, agentId: agent.id });
     console.log(`\n${chalk.cyan(agent.name)}> ${response.content}\n`);
   } catch (error) {
@@ -157,10 +157,10 @@ async function runSlashCommand(input: string, root: string): Promise<boolean> {
       const task = (noSynthesize ? args.slice(1) : args).join(' ').trim();
       if (!task) { console.log('Usage: /swarm [--no-synthesize] <task>'); return true; }
       console.log(chalk.gray('Running swarm...'));
-      const results = await orchestrate(task);
+      const results = await runWithActivity(() => orchestrate(task));
       for (const result of results) console.log(`\n${chalk.cyan(`[${result.agent.name}]`)}${result.success ? '' : chalk.red(' — failed')}\n${result.content}`);
       if (!noSynthesize && results.some(result => result.success)) {
-        const finalAnswer = await synthesizeResults(task, results);
+        const finalAnswer = await runWithActivity(() => synthesizeResults(task, results));
         if (finalAnswer) console.log(`\n${chalk.green('✓ Final synthesis')}\n${chalk.bold(finalAnswer)}`);
       }
       return true;
@@ -177,7 +177,7 @@ async function runSlashCommand(input: string, root: string): Promise<boolean> {
     }
     case 'logout': {
       if (!args[0]) { console.log('Usage: /logout <provider>'); return true; }
-      console.log(chalk.yellow('Use `agentmesh logout <provider>` from the project shell for provider logout.')); 
+      console.log(chalk.yellow('Use `agentmesh logout <provider>` from the project shell for provider logout.'));
       return true;
     }
     case 'chat':
@@ -189,7 +189,6 @@ async function runSlashCommand(input: string, root: string): Promise<boolean> {
   }
 }
 
-/** Runs one interactive input. Normal text is AI chat; slash-prefixed input is a workspace command. */
 export async function runInteractiveCommand(input: string, root: string): Promise<boolean> {
   const trimmed = input.trim();
   if (!trimmed) return true;
