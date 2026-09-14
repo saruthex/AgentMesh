@@ -6,7 +6,9 @@ import { OpenAIProviderAdapter } from './openai.js';
 import { executeAccountCli, accountCliAuthenticated } from './account-cli.js';
 import { providerRegistry } from './registry.js';
 import { loginRegistry } from './login-registry.js';
-import type { ChatResponse, ProviderMessage } from './types.js';
+import type { ChatResponse, ProviderMessage, ProviderTool } from './types.js';
+import { workspaceToolDefinitions, executeWorkspaceTool } from '../workspace/tool-executor.js';
+import { emitActivity } from '../workspace/activity.js';
 
 let initialized = false;
 
@@ -24,6 +26,8 @@ export interface ExecuteChatOptions {
   model?: string;
   retries?: number;
   authMode?: 'account' | 'api' | 'auto';
+  enableWorkspaceTools?: boolean;
+  maxToolRounds?: number;
 }
 
 function isTransientError(error: unknown): boolean {
@@ -38,6 +42,43 @@ function wait(ms: number): Promise<void> {
 function canUseAccountCli(providerId: string): boolean {
   if (providerId !== 'openai' && providerId !== 'anthropic') return false;
   try { return accountCliAuthenticated(providerId); } catch { return false; }
+}
+
+function providerTools(): ProviderTool[] {
+  return workspaceToolDefinitions.map(tool => ({
+    type: 'function',
+    function: { name: tool.name, description: tool.description, parameters: tool.inputSchema }
+  }));
+}
+
+async function chatWithWorkspaceTools(providerId: string, messages: ProviderMessage[], options: ExecuteChatOptions): Promise<ChatResponse> {
+  const provider = providerRegistry.get(providerId);
+  if (!provider) throw new Error(`Provider adapter not configured: ${providerId}`);
+  const tools = options.enableWorkspaceTools === false ? undefined : providerTools();
+  const maxRounds = options.maxToolRounds ?? 12;
+  let working = [...messages];
+
+  for (let round = 0; round <= maxRounds; round++) {
+    emitActivity({ kind: 'working', message: round === 0 ? 'Thinking…' : 'Continuing work…' });
+    const response = await provider.chat({ model: options.model, messages: working, tools });
+    if (!response.toolCalls?.length) return response;
+
+    working.push({
+      role: 'assistant',
+      content: response.content,
+      toolCalls: response.toolCalls
+    });
+
+    for (const toolCall of response.toolCalls) {
+      let parsed: Record<string, unknown>;
+      try { parsed = JSON.parse(toolCall.arguments) as Record<string, unknown>; }
+      catch { parsed = {}; }
+      const result = executeWorkspaceTool({ id: toolCall.id, name: toolCall.name, arguments: parsed });
+      working.push({ role: 'tool', content: result.content, toolCallId: result.toolCallId });
+    }
+  }
+
+  throw new Error(`Agent exceeded the maximum workspace tool rounds (${maxRounds}).`);
 }
 
 export async function executeChat(
@@ -55,18 +96,16 @@ export async function executeChat(
   const authMode = options.authMode ?? 'auto';
   const accountCapable = canUseAccountCli(providerId);
 
-  if (authMode !== 'api' && accountCapable) {
+  if (authMode !== 'api' && accountCapable && options.enableWorkspaceTools === false) {
     try {
       return await executeAccountCli(providerId, messages, options.model);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (authMode === 'account' || /login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) {
-        throw error;
-      }
+      if (authMode === 'account' || /login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) throw error;
     }
   }
 
-  if (authMode === 'account') {
+  if (authMode === 'account' && options.enableWorkspaceTools !== true) {
     throw new Error(`Provider "${providerId}" has no authenticated account CLI available. Run \`agentmesh auth\` to check account readiness, then \`agentmesh login ${providerId}\` for supported account login.`);
   }
 
@@ -75,10 +114,11 @@ export async function executeChat(
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      return await provider.chat({ messages, model: options.model });
+      return await chatWithWorkspaceTools(providerId, messages, options);
     } catch (error) {
       lastError = error;
       if (attempt >= retries || !isTransientError(error)) break;
+      emitActivity({ kind: 'retry', message: `Retrying…`, detail: `attempt ${attempt + 2}` });
       await wait(500 * (attempt + 1));
     }
   }
