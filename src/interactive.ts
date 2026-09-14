@@ -1,4 +1,4 @@
-import { createInterface, type Interface } from 'node:readline';
+import { createInterface } from 'node:readline';
 import chalk from 'chalk';
 import { findProjectRoot, readProjectConfig } from './storage/project.js';
 import { agentRoles, connectAgent, switchAgent } from './agents/registry.js';
@@ -93,11 +93,14 @@ async function chatOnce(message: string): Promise<void> {
   const agent = config.agents.find(item => item.id === config.activeAgent);
   if (!agent) throw new Error('Active agent configuration is invalid.');
   const resolvedProvider = agent.provider === 'custom' ? 'mock' : agent.provider;
-  const authMode = resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
   const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
   addMessage({ role: 'user', content: message, agentId: agent.id });
   try {
-    const response = await runWithActivity(() => executeChat(resolvedProvider, [...history, { role: 'user', content: message }], { model: agent.model, authMode }));
+    const response = await runWithActivity(() => executeChat(resolvedProvider, [...history, { role: 'user', content: message }], {
+      model: agent.model,
+      authMode: 'auto',
+      enableWorkspaceTools: true
+    }));
     addMessage({ role: 'agent', content: response.content, agentId: agent.id });
     console.log(`\n${chalk.cyan(agent.name)}> ${response.content}\n`);
   } catch (error) {
@@ -210,6 +213,6 @@ export async function startInteractiveMode(): Promise<void> {
       try { running = await runInteractiveCommand(line, root); }
       catch (error) { console.log(chalk.red(`✗ ${error instanceof Error ? error.message : String(error)}`)); }
     }
-  } finally { rl.off('SIGINT', onSigint); rl.close(); }
+  } finally { rl.off('SIGINT', onSigINT); rl.close(); }
   console.log(chalk.gray('Goodbye 👋'));
 }
