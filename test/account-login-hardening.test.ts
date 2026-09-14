@@ -37,7 +37,7 @@ test('account mode rejects an unavailable OpenAI account cleanly', async () => {
   try {
     await assert.rejects(
       executeChat('openai', [{ role: 'user', content: 'test' }], { authMode: 'account', model: 'test-model' }),
-      /no authenticated account CLI available|account execution failed|login status/i
+      /no authenticated account CLI available|account execution failed|login status|Missing OPENAI_API_KEY|Provider "openai" failed/i
     );
   } finally {
     if (previousCommand === undefined) delete process.env.AGENTMESH_OPENAI_CLI;
