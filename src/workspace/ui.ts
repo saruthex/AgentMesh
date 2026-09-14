@@ -1,43 +1,58 @@
 import chalk from 'chalk';
-import { emitActivity, type ActivityEvent } from './activity.js';
+import { emitActivity, subscribeActivity, type ActivityEvent } from './activity.js';
 
 const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 let frame = 0;
 let timer: NodeJS.Timeout | undefined;
 let active = false;
+let unsubscribe: (() => void) | undefined;
+let currentMessage = '';
+let currentDetail = '';
 
-function render(event: ActivityEvent): void {
-  if (!process.stdout.isTTY) return;
+function render(): void {
+  if (!process.stdout.isTTY || !active) return;
+  process.stdout.write(`\r${chalk.cyan(frames[frame++ % frames.length])} ${currentMessage}${currentDetail ? chalk.gray(` · ${currentDetail}`) : ''}   `);
+}
+
+function onActivity(event: ActivityEvent): void {
   if (event.kind === 'working' || event.kind === 'tool' || event.kind === 'retry') {
-    process.stdout.write(`\r${chalk.cyan(frames[frame++ % frames.length])} ${event.message}${event.detail ? chalk.gray(` · ${event.detail}`) : ''}   `);
-  } else {
-    process.stdout.write('\r\x1b[2K');
+    currentMessage = event.message;
+    currentDetail = event.detail ?? '';
+    render();
+    return;
   }
+  if (event.kind === 'done' || event.kind === 'error') {
+    clearActivityLine();
+  }
+}
+
+function clearActivityLine(): void {
+  if (process.stdout.isTTY) process.stdout.write('\r\x1b[2K');
 }
 
 export function startActivityRenderer(): void {
   if (active) return;
   active = true;
-  if (process.stdout.isTTY) timer = setInterval(() => {
-    if (active) render({ kind: 'working', message: 'Working…' });
-  }, 90);
-  emitActivity({ kind: 'done', message: '' });
+  currentMessage = 'Working…';
+  currentDetail = '';
+  unsubscribe = subscribeActivity(onActivity);
+  if (process.stdout.isTTY) timer = setInterval(render, 90);
+  render();
 }
 
 export function stopActivityRenderer(): void {
   active = false;
   if (timer) clearInterval(timer);
   timer = undefined;
-  if (process.stdout.isTTY) process.stdout.write('\r\x1b[2K');
+  unsubscribe?.();
+  unsubscribe = undefined;
+  clearActivityLine();
 }
 
-export function attachActivityRenderer(): () => void {
-  const unsubscribe = (() => {
-    const listener = (event: ActivityEvent) => render(event);
-    return listener;
-  })();
-  // Activity listeners are managed by a small adapter so the renderer stays optional.
-  const { subscribeActivity } = require('./activity.js') as typeof import('./activity.js');
-  const off = subscribeActivity(unsubscribe);
-  return () => { off(); stopActivityRenderer(); };
+export function runWithActivity<T>(work: () => Promise<T>): Promise<T> {
+  startActivityRenderer();
+  return work().finally(stopActivityRenderer);
 }
+
+// Keep the event API available to callers that want to emit a custom activity state.
+export { emitActivity };
