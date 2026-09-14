@@ -27,7 +27,7 @@ program.command('init [name]').description('Create an AgentMesh project').action
   const root = initProject(name);
   console.log(chalk.green('✓ AgentMesh project created'));
   console.log(chalk.cyan(root));
-  console.log(chalk.gray(`Next: cd "${root}" && agentmesh`));
+  console.log(chalk.gray(`Next: cd \"${root}\" && agentmesh`));
 });
 
 program.command('interactive').alias('ui').description('Open the interactive AgentMesh terminal workspace').action(async () => startInteractiveMode());
@@ -161,7 +161,7 @@ program.command('chat <message>')
     const authMode = options.api ? 'api' : resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
     addMessage({ role: 'user', content: message, agentId: activeAgent.id });
     const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
-    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model, authMode });
+    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model, authMode, enableWorkspaceTools: true });
     addMessage({ role: 'agent', content: response.content, agentId: activeAgent.id });
     console.log(chalk.green('✓ Message processed'));
     console.log(chalk.bold(response.content));
