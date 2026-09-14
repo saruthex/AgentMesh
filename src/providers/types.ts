@@ -1,17 +1,36 @@
 export interface ProviderMessage {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  toolCallId?: string;
+  toolCalls?: ProviderToolCall[];
+}
+
+export interface ProviderToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export interface ProviderTool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
 }
 
 export interface ChatRequest {
   model?: string;
   messages: ProviderMessage[];
+  tools?: ProviderTool[];
 }
 
 export interface ChatResponse {
   content: string;
   model?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
+  toolCalls?: ProviderToolCall[];
 }
 
 export interface ProviderAdapter {
@@ -34,4 +53,5 @@ export interface OAuthLoginResult {
 export interface ProviderCapabilities {
   apiKeyAuth: boolean;
   oauthLogin: boolean;
+  tools?: boolean;
 }
