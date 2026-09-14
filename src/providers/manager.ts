@@ -88,9 +88,13 @@ export async function executeChat(providerId: string, messages: ProviderMessage[
   if (!provider) throw new Error(`Provider adapter not configured: ${providerId}. Available adapters: ${providerRegistry.list().join(', ')}`);
 
   const authMode = options.authMode ?? 'auto';
+  const toolsEnabled = options.enableWorkspaceTools === true;
   const accountCapable = canUseAccountCli(providerId);
 
-  if (authMode !== 'api' && accountCapable && options.enableWorkspaceTools !== true) {
+  // Provider-owned account CLIs are supported for plain chat. They are deliberately
+  // bypassed for workspace-tool requests because their stdout-only bridge cannot
+  // safely expose AgentMesh's in-process tool protocol.
+  if (!toolsEnabled && authMode !== 'api' && accountCapable) {
     try { return await executeAccountCli(providerId, messages, options.model); }
     catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -98,12 +102,14 @@ export async function executeChat(providerId: string, messages: ProviderMessage[
     }
   }
 
-  if (authMode === 'account' && options.enableWorkspaceTools !== true) {
-    throw new Error(`Provider "${providerId}" has no authenticated account CLI available. Run \`agentmesh auth\` to check account readiness, then \`agentmesh login ${providerId}\` for supported account login.`);
-  }
-
-  if (authMode === 'account' && options.enableWorkspaceTools === true && provider.capabilities?.tools !== true) {
-    throw new Error(`Provider "${providerId}" account mode does not currently support AgentMesh workspace tools. Use API-key mode for file-writing tasks.`);
+  if (authMode === 'account' && toolsEnabled) {
+    // Account CLI authentication exists, but the current provider-owned bridge
+    // cannot participate in structured AgentMesh tool calls. Avoid the misleading
+    // "workspace is read-only" behavior and state the actual requirement.
+    if (accountCapable) {
+      throw new Error(`OpenAI account login is available, but workspace file tools require a tool-capable API connection. Set OPENAI_API_KEY (or use an AgentMesh account adapter that exposes tool calls) for file-writing tasks.`);
+    }
+    throw new Error(`OpenAI account mode is not available. Run \`agentmesh auth\` to check authentication, or configure OPENAI_API_KEY for workspace file tools.`);
   }
 
   const retries = options.retries ?? 1;
