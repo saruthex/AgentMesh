@@ -26,9 +26,18 @@ function ensureStore(): void {
 function readStore(): CredentialFile {
   ensureStore();
   if (!existsSync(file)) return { version: 1, credentials: [] };
-  const parsed = JSON.parse(readFileSync(file, 'utf8')) as CredentialFile;
-  if (parsed.version !== 1 || !Array.isArray(parsed.credentials)) throw new Error('Invalid AgentMesh credential store.');
-  return parsed;
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as any;
+    if (parsed && typeof parsed === 'object') {
+      if (Array.isArray(parsed.credentials)) {
+        return { version: 1, credentials: parsed.credentials };
+      }
+      if (typeof parsed.credentials === 'object' && parsed.credentials !== null) {
+        return { version: 1, credentials: Object.values(parsed.credentials) };
+      }
+    }
+  } catch {}
+  return { version: 1, credentials: [] };
 }
 
 function writeStore(store: CredentialFile): void {

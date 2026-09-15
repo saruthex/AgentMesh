@@ -28,6 +28,9 @@ export interface ExecuteChatOptions {
   authMode?: 'account' | 'api' | 'auto';
   enableWorkspaceTools?: boolean;
   maxToolRounds?: number;
+  agentId?: string;
+  role?: string;
+  taskId?: string;
 }
 
 function isTransientError(error: unknown): boolean {
@@ -74,7 +77,10 @@ async function chatWithWorkspaceTools(providerId: string, messages: ProviderMess
       let parsed: Record<string, unknown>;
       try { parsed = JSON.parse(toolCall.arguments) as Record<string, unknown>; }
       catch { parsed = {}; }
-      const result = executeWorkspaceTool({ id: toolCall.id, name: toolCall.name, arguments: parsed });
+      const result = executeWorkspaceTool(
+        { id: toolCall.id, name: toolCall.name, arguments: parsed },
+        { agentId: options.agentId, role: options.role, taskId: options.taskId }
+      );
       working.push({ role: 'tool', content: result.content, toolCallId: result.toolCallId });
     }
   }

@@ -101,3 +101,70 @@ export function deleteWorkspacePath(relativePath: string, cwd = process.cwd()): 
   if (target === path.resolve(root)) throw new Error('Refusing to delete the workspace root.');
   fs.rmSync(target, { recursive: true, force: false });
 }
+
+export function moveWorkspaceFile(sourceRelative: string, destRelative: string, cwd = process.cwd()): void {
+  const { root, allowWrite } = getWorkspacePolicy(cwd);
+  if (!allowWrite) throw new Error('Workspace is read-only.');
+  const source = assertInside(root, path.join(root, sourceRelative));
+  const dest = assertInside(root, path.join(root, destRelative));
+  if (!fs.existsSync(source)) throw new Error(`Source path does not exist: ${sourceRelative}`);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.renameSync(source, dest);
+}
+
+export interface SearchMatch {
+  file: string;
+  line: number;
+  content: string;
+}
+
+export function searchWorkspaceFiles(query: string, relativePath = '.', cwd = process.cwd(), limit = 50): SearchMatch[] {
+  const { root } = getWorkspacePolicy(cwd);
+  const dir = assertInside(root, path.join(root, relativePath));
+  if (!fs.existsSync(dir)) throw new Error(`Path does not exist: ${relativePath}`);
+
+  const results: SearchMatch[] = [];
+  const q = query.toLowerCase();
+
+  function scan(current: string) {
+    if (results.length >= limit) return;
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      if (results.length >= limit) break;
+      const full = path.join(current, entry.name);
+      // Skip symlinks to avoid escapes
+      try {
+        if (fs.lstatSync(full).isSymbolicLink()) continue;
+      } catch {
+        continue;
+      }
+      if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === '.agentmesh') continue;
+
+      if (entry.isDirectory()) {
+        scan(full);
+      } else if (entry.isFile()) {
+        try {
+          const content = fs.readFileSync(full, 'utf8');
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (results.length >= limit) break;
+            const line = lines[i]!;
+            if (line.toLowerCase().includes(q)) {
+              results.push({
+                file: path.relative(root, full),
+                line: i + 1,
+                content: line.trim()
+              });
+            }
+          }
+        } catch {
+          // Skip binary or unreadable files
+        }
+      }
+    }
+  }
+
+  scan(dir);
+  return results;
+}
+

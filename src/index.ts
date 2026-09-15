@@ -17,6 +17,13 @@ import { workflowSummary } from './collaboration/workflow.js';
 import { synthesizeResults } from './collaboration/synthesis.js';
 import { loginRegistry } from './providers/login-registry.js';
 import { startInteractiveMode } from './interactive.js';
+import { githubStatus, githubLogin, githubLogout, githubRepos, githubClone, githubPrCommand, githubIssueCommand } from './commands/github.js';
+import { getGitStatus, getGitDiff, gitCommit } from './git/client.js';
+import { getGitHubAuthStatus } from './github/auth.js';
+import { listTasks, getTask, delegateTask } from './tasks/manager.js';
+import { getAgentPermissions, getPermissionMode, setPermissionMode } from './permissions/manager.js';
+import { messageBus } from './collaboration/messageBus.js';
+import { getWorkspacePolicy, listWorkspace } from './workspace/files.js';
 
 initializeProviders();
 
@@ -51,7 +58,8 @@ program.command('agents').description('List connected agents').action(() => {
   if (!config.agents.length) return console.log(chalk.yellow('No agents connected yet.'));
   for (const agent of config.agents) {
     const active = config.activeAgent === agent.id ? chalk.green(' ● active') : '';
-    console.log(`• ${agent.name} [${agent.provider}] (${agent.role ?? 'general'})${agent.model ? ` - ${agent.model}` : ''}${active}`);
+    const perms = getAgentPermissions(agent.id, agent.role).join(',');
+    console.log(`• ${agent.name} [${agent.provider}] (${agent.role ?? 'general'})${agent.model ? ` - ${agent.model}` : ''} [${perms}]${active}`);
   }
 });
 
@@ -161,7 +169,13 @@ program.command('chat <message>')
     const authMode = options.api ? 'api' : resolvedProvider === 'openai' || resolvedProvider === 'anthropic' ? 'account' : 'api';
     addMessage({ role: 'user', content: message, agentId: activeAgent.id });
     const history: ProviderMessage[] = loadContext().map(item => ({ role: item.role === 'agent' ? 'assistant' : item.role, content: item.content }));
-    const response = await executeChat(resolvedProvider, history, { model: activeAgent.model, authMode, enableWorkspaceTools: true });
+    const response = await executeChat(resolvedProvider, history, {
+      model: activeAgent.model,
+      authMode,
+      enableWorkspaceTools: true,
+      agentId: activeAgent.id,
+      role: activeAgent.role
+    });
     addMessage({ role: 'agent', content: response.content, agentId: activeAgent.id });
     console.log(chalk.green('✓ Message processed'));
     console.log(chalk.bold(response.content));
@@ -210,7 +224,7 @@ program.command('history').description('Show shared project context').action(() 
   for (const message of messages) console.log(`[${message.role}] ${message.agentId ?? 'system'}: ${message.content}`);
 });
 
-program.command('status').description('Show project status').action(() => {
+program.command('status').description('Show project status').action(async () => {
   const root = findProjectRoot(process.cwd());
   if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
   const config = readProjectConfig(root);
@@ -219,6 +233,112 @@ program.command('status').description('Show project status').action(() => {
   console.log('Agents:', config.agents.length);
   console.log('Active:', config.activeAgent ?? 'none');
   console.log('Context messages:', loadContext().length);
+  const git = getGitStatus(root);
+  if (git.isRepo) {
+    console.log('Git branch:', git.branch);
+    console.log('Git clean:', git.clean ? 'yes' : 'no');
+  }
+  const gh = await getGitHubAuthStatus();
+  if (gh.authenticated) {
+    console.log('GitHub:', `✓ ${gh.username}`);
+  }
+});
+
+// GitHub CLI Commands
+const ghCmd = program.command('github').description('GitHub integration for AgentMesh');
+ghCmd.command('status').description('Show GitHub connection status').action(async () => githubStatus());
+ghCmd.command('login [token]').description('Connect GitHub using a personal access token or GitHub CLI').action(async (token?: string) => githubLogin(token));
+ghCmd.command('logout').description('Disconnect GitHub account').action(() => githubLogout());
+ghCmd.command('repos [limit]').description('List GitHub repositories').action(async (limit?: string) => githubRepos(limit ? parseInt(limit, 10) : 10));
+ghCmd.command('clone <repo> [dest]').description('Clone a GitHub repository').action(async (repo: string, dest?: string) => githubClone(repo, dest));
+ghCmd.command('pr [subcommand] [args...]').description('Create or view pull requests').action(async (sub?: string, args?: string[]) => {
+  await githubPrCommand([sub ?? 'list', ...(args ?? [])]);
+});
+ghCmd.command('issue [subcommand] [args...]').description('Create or view issues').action(async (sub?: string, args?: string[]) => {
+  await githubIssueCommand([sub ?? 'help', ...(args ?? [])]);
+});
+
+// Git CLI Commands
+const gitCmd = program.command('git').description('Git operations in workspace');
+gitCmd.command('status').description('Show git status').action(() => {
+  const s = getGitStatus();
+  if (!s.isRepo) return console.log(chalk.yellow('Not a git repository'));
+  console.log(`Branch: ${chalk.green(s.branch)}`);
+  console.log(s.clean ? chalk.gray('Working tree clean') : s.raw);
+});
+gitCmd.command('diff').description('Show git diff').action(() => {
+  const d = getGitDiff();
+  console.log(d || chalk.gray('No git diff.'));
+});
+gitCmd.command('commit <message>').description('Commit changes').action((msg: string) => {
+  const res = gitCommit(msg);
+  console.log(chalk.green(`✓ ${res}`));
+});
+
+// Tasks CLI Commands
+const taskCmd = program.command('tasks').description('Manage multi-agent tasks');
+taskCmd.command('list').description('List all tasks').action(() => {
+  const tasks = listTasks();
+  if (!tasks.length) return console.log(chalk.gray('No tasks yet.'));
+  for (const t of tasks) {
+    const marker = t.status === 'completed' ? chalk.green('✓') : t.status === 'failed' ? chalk.red('✗') : chalk.yellow('●');
+    console.log(`${marker} ${t.id} [${t.status}] ${t.title}${t.assignedTo ? ` (${t.assignedTo})` : ''}`);
+  }
+});
+taskCmd.command('get <id>').description('Get task details').action((id: string) => {
+  const t = getTask(id);
+  if (!t) return console.log(chalk.yellow(`Task not found: ${id}`));
+  console.log(chalk.bold(`Task ${t.id}`));
+  console.log(`Title: ${t.title}`);
+  console.log(`Status: ${t.status}`);
+  if (t.assignedTo) console.log(`Assigned: ${t.assignedTo}`);
+  if (t.description) console.log(`Description: ${t.description}`);
+  if (t.result) console.log(`Result: ${t.result}`);
+});
+
+// Permissions CLI Commands
+program.command('permissions')
+  .option('--mode <mode>', 'Set permission mode (strict | autonomous)')
+  .description('View or update workspace permissions')
+  .action((options) => {
+    if (options.mode) {
+      setPermissionMode(options.mode === 'autonomous' ? 'autonomous' : 'strict');
+      console.log(chalk.green(`✓ Permission mode set to: ${options.mode}`));
+      return;
+    }
+    const root = findProjectRoot(process.cwd());
+    if (!root) throw new Error('No AgentMesh project found. Run: agentmesh init');
+    const config = readProjectConfig(root);
+    const mode = getPermissionMode();
+    console.log(chalk.bold(`Permission mode: ${mode}`));
+    for (const agent of config.agents) {
+      const caps = getAgentPermissions(agent.id, agent.role);
+      console.log(`• ${agent.name} (${agent.role ?? 'general'}): ${caps.join(', ')}`);
+    }
+  });
+
+// Workspace CLI Command
+program.command('workspace').description('Inspect workspace files').action(() => {
+  const policy = getWorkspacePolicy();
+  console.log(chalk.bold(`Workspace root: ${policy.root}`));
+  const entries = listWorkspace('.');
+  console.log(`Entries (${entries.length}):`);
+  for (const e of entries.slice(0, 30)) {
+    console.log(`  ${e.type === 'directory' ? chalk.blue(e.path + '/') : e.path}`);
+  }
+  if (entries.length > 30) console.log(chalk.gray(`  ...and ${entries.length - 30} more items`));
+});
+
+// Delegate CLI Command
+program.command('delegate <agent> <task>').description('Delegate a task to an agent').action((agent: string, task: string) => {
+  const t = delegateTask('user', agent, task);
+  console.log(chalk.green(`✓ Delegated task ${t.id} to ${agent}`));
+});
+
+// Message CLI Command
+program.command('message <agent> <message>').description('Send a message to an agent').action((agent: string, msg: string) => {
+  const m = messageBus.sendMessage({ from: 'user', to: agent, content: msg });
+  console.log(chalk.green(`✓ Sent message to ${agent} (id: ${m.id})`));
 });
 
 if (process.argv.length <= 2) {

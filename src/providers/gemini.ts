@@ -1,6 +1,6 @@
 import { getProviderApiKey } from './auth.js';
 import { getCredential, saveCredential } from './credentials.js';
-import type { ChatRequest, ChatResponse, ProviderAdapter } from './types.js';
+import type { ChatRequest, ChatResponse, ProviderAdapter, ProviderToolCall } from './types.js';
 
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
@@ -60,7 +60,7 @@ async function refreshOAuthCredential(provider: string) {
 
 export class GeminiProviderAdapter implements ProviderAdapter {
   readonly id = 'gemini';
-  readonly capabilities = { apiKeyAuth: true, oauthLogin: true } as const;
+  readonly capabilities = { apiKeyAuth: true, oauthLogin: true, tools: true } as const;
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
     const credential = await refreshOAuthCredential(this.id);
@@ -75,10 +75,43 @@ export class GeminiProviderAdapter implements ProviderAdapter {
 
     const contents = request.messages
       .filter(message => message.role !== 'system')
-      .map(message => ({
-        role: message.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: message.content }]
-      }));
+      .map(message => {
+        if (message.role === 'tool') {
+          return {
+            role: 'function',
+            parts: [{
+              functionResponse: {
+                name: message.toolCallId ?? 'tool',
+                response: { content: message.content }
+              }
+            }]
+          };
+        }
+        if (message.role === 'assistant' && message.toolCalls?.length) {
+          const parts: any[] = [];
+          if (message.content) parts.push({ text: message.content });
+          for (const tc of message.toolCalls) {
+            let args: any = {};
+            try { args = JSON.parse(tc.arguments); } catch {}
+            parts.push({ functionCall: { name: tc.name, args } });
+          }
+          return { role: 'model', parts };
+        }
+        return {
+          role: message.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: message.content }]
+        };
+      });
+
+    const tools = request.tools?.length
+      ? [{
+          functionDeclarations: request.tools.map(t => ({
+            name: t.function.name,
+            description: t.function.description,
+            parameters: t.function.parameters
+          }))
+        }]
+      : undefined;
 
     const url = apiKey
       ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`
@@ -96,18 +129,29 @@ export class GeminiProviderAdapter implements ProviderAdapter {
       headers,
       body: JSON.stringify({
         ...(systemInstruction ? { systemInstruction: { parts: [{ text: systemInstruction }] } } : {}),
-        contents
+        contents,
+        ...(tools ? { tools } : {})
       })
     });
 
     const data = await response.json() as any;
     if (!response.ok) throw new Error(`Gemini request failed: ${data?.error?.message ?? response.statusText}`);
 
-    const content = data?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text ?? '').join('') ?? '';
-    if (!content) throw new Error('Gemini returned an empty response.');
+    const parts = data?.candidates?.[0]?.content?.parts ?? [];
+    const content = parts.filter((part: any) => typeof part?.text === 'string').map((part: any) => part.text).join('');
+    const toolCalls: ProviderToolCall[] = parts
+      .filter((part: any) => part?.functionCall)
+      .map((part: any, idx: number) => ({
+        id: `call_${idx}_${Date.now()}`,
+        name: part.functionCall.name,
+        arguments: JSON.stringify(part.functionCall.args ?? {})
+      }));
+
+    if (!content && toolCalls.length === 0) throw new Error('Gemini returned an empty response.');
 
     return {
       content,
+      toolCalls: toolCalls.length ? toolCalls : undefined,
       model,
       usage: {
         inputTokens: data?.usageMetadata?.promptTokenCount,
@@ -116,3 +160,4 @@ export class GeminiProviderAdapter implements ProviderAdapter {
     };
   }
 }
+
