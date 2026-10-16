@@ -115,7 +115,7 @@ export async function executeChat(providerId: string, messages: ProviderMessage[
     if (accountCapable) {
       throw new Error(`${providerId} account login is available, but AgentMesh workspace tools require an API key. For plain chat, AgentMesh can use your signed-in provider CLI. To use AgentMesh's built-in workspace tools, set ${providerId === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} or disable workspace tools.`);
     }
-    throw new Error(`${providerId} account mode is not available. Run `agentmesh auth` to check authentication, or configure that provider's API key for workspace tools.`);
+    throw new Error(`${providerId} account mode is not available. Run \\`agentmesh auth\\` to check authentication, or configure that provider's API key for workspace tools.`);
   }
 
   const retries = options.retries ?? 1;
