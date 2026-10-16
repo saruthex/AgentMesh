@@ -36,7 +36,10 @@ export function getProviderApiKey(provider: string): string {
 
   const value = process.env[envKey]?.trim();
   if (!value) {
-    throw new Error(`Missing ${envKey}. Set it in your shell environment; AgentMesh never stores API keys in project files.`);
+    const loginHint = provider === 'openai' || provider === 'anthropic'
+      ? ` If you already signed in to your provider account, run `agentmesh chat "<message>"` for account-CLI chat. Built-in AgentMesh workspace tools need an API key.`
+      : '';
+    throw new Error(`Missing ${envKey}. For API mode, create a key at https://platform.openai.com/api-keys and set it in your shell (Termux: export ${envKey}='your-key'). Never paste keys into project files.${loginHint}`);
   }
 
   return value;
