@@ -13,7 +13,7 @@ AgentMesh is a provider-agnostic multi-agent orchestration platform for the term
 - **Conflict Management**: Concurrent file write detection and resolution policies.
 - **Capability-Based Permissions**: Granular permissions (`read`, `write`, `execute`, `git`, `github`, `network`) with strict and autonomous modes.
 - **GitHub Integration**: First-class GitHub support (login, repos, clone, branch, PR, issues, CI check) accessible both via CLI and as agent tools.
-- **Termux & Mobile Ready**: 100% compatible with Termux and standard Linux/macOS terminals without any GUI dependencies.
+- **Termux & Mobile Ready**: Compatible with Termux and standard Linux/macOS terminals without GUI dependencies.
 
 ## Quick start
 
@@ -30,6 +30,21 @@ node ../dist/index.js
 ```
 
 The last command opens the AI-first interactive terminal. Once you are inside, normal text is sent directly to the active agent; slash commands control the workspace.
+
+### OpenAI authentication (important)
+
+An OpenAI account login and an OpenAI API key are two different authentication methods. AgentMesh never shares credentials between them and never writes API keys into project files.
+
+- **Account CLI for ordinary chat:** If the official Codex CLI is installed and signed in, use `agentmesh login openai` and run ordinary chat. On Android/Termux, Codex may not have a compatible build; check `agentmesh auth`.
+- **AgentMesh built-in workspace tools:** The in-process tool loop uses the OpenAI API and requires your own API key. Create one at https://platform.openai.com/api-keys, then set it in Termux:
+
+```bash
+export OPENAI_API_KEY='your-api-key'
+```
+
+To persist this setting across Bash sessions, add the export to `~/.bashrc`, replacing the placeholder with your key. Never commit the key or share terminal screenshots containing it. OpenAI API billing is separate from a ChatGPT subscription.
+
+If you only want to chat through the provider CLI without configuring an API key, use the provider CLI's own login and test it with `agentmesh chat "Hello"`. Workspace tools that need AgentMesh's in-process tool loop require API-key authentication.
 
 ## AI-first interactive terminal
 
@@ -62,11 +77,11 @@ AgentMesh › Planning...
 /connect <provider> [name] [role]       Connect an agent (general, architect, developer, reviewer, tester, custom)
 /switch <agent>                         Change active agent
 /plan <task>                            Preview role-based workflow
-/swarm <task>                           Run a multi-agent task with real tools and synthesis
+/swarm <task>                           Run a multi-agent task with synthesis
 /swarm --no-synthesize <task>           Run without final synthesis
 /tasks                                  List project tasks
 /task <id>                              View task details
-/message <agent> <message>              Send direct message on the AgentMesh message bus
+/message <agent> <message>              Send direct agent message on the AgentMesh message bus
 /delegate <agent> <task>                Delegate a subtask to another agent
 /permissions                            View capability permissions
 /permissions mode <strict|autonomous>   Toggle permission enforcement mode
@@ -89,7 +104,7 @@ Normal text is always treated as conversation with the active agent.
 
 ```bash
 agentmesh init [name]
-agentmesh interactive                   # Launch interactive terminal UI
+agentmesh interactive
 agentmesh providers
 agentmesh connect <provider> --name <name> --role <role>
 agentmesh agents
@@ -123,16 +138,16 @@ Agents can autonomously request structured workspace tools:
 
 - Workspace access is restricted to the project root with path traversal and symbolic link escape protection.
 - Secrets, tokens, and credentials are never stored in the project repository or printed to terminal logs.
-- Operations are gated by agent capabilities (`read`, `write`, `execute`, `git`, `github`, `network`).
+- Operations are gated by agent capabilities (`read`, `write`, `execute`, `git`, `github`, `network`) with strict and autonomous modes.
 
 ## Termux & Android Compatibility
 
-AgentMesh runs fully on Termux (Android). It uses Node.js terminal capabilities, standard POSIX child processes, and native fetch. When `gh` CLI is installed, AgentMesh automatically leverages its authentication for GitHub workflows.
+AgentMesh uses Node.js terminal capabilities, standard POSIX child processes, and native fetch. When `gh` CLI is installed, AgentMesh automatically leverages its authentication for GitHub workflows.
 
 ## Development & Testing
 
 ```bash
-npm run check      # Type checking with TypeScript
-npm test           # Run comprehensive test suite
-npm run build      # Compile to dist
+npm run check
+npm test
+npm run build
 ```
