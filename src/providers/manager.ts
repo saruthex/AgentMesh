@@ -6,6 +6,7 @@ import { OpenAIProviderAdapter } from './openai.js';
 import { executeAccountCli, accountCliAuthenticated } from './account-cli.js';
 import { providerRegistry } from './registry.js';
 import { loginRegistry } from './login-registry.js';
+import { providerAuthStatus } from './auth.js';
 import type { ChatResponse, ProviderMessage, ProviderTool } from './types.js';
 import { workspaceToolDefinitions, executeWorkspaceTool } from '../workspace/tool-executor.js';
 import { emitActivity } from '../workspace/activity.js';
@@ -96,26 +97,25 @@ export async function executeChat(providerId: string, messages: ProviderMessage[
   const authMode = options.authMode ?? 'auto';
   const toolsEnabled = options.enableWorkspaceTools === true;
   const accountCapable = canUseAccountCli(providerId);
+  const apiKeyAvailable = providerAuthStatus(providerId);
 
-  // Provider-owned account CLIs are supported for plain chat. They are deliberately
-  // bypassed for workspace-tool requests because their stdout-only bridge cannot
-  // safely expose AgentMesh's in-process tool protocol.
-  if (!toolsEnabled && authMode !== 'api' && accountCapable) {
-    try { return await executeAccountCli(providerId, messages, options.model); }
-    catch (error) {
+  // Provider-owned account CLIs can answer ordinary chat, even when workspace
+  // tools are enabled: in that case the CLI manages its own tool execution.
+  // AgentMesh's in-process tools still require API-key auth.
+  if (authMode !== 'api' && accountCapable && (!toolsEnabled || !apiKeyAvailable)) {
+    try {
+      return await executeAccountCli(providerId, messages, options.model);
+    } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (authMode === 'account' || /login|authenticate|auth|not logged|unauthorized|credential/i.test(message)) throw error;
     }
   }
 
-  if (authMode === 'account' && toolsEnabled) {
-    // Account CLI authentication exists, but the current provider-owned bridge
-    // cannot participate in structured AgentMesh tool calls. Avoid the misleading
-    // "workspace is read-only" behavior and state the actual requirement.
+  if (authMode === 'account' && toolsEnabled && !apiKeyAvailable) {
     if (accountCapable) {
-      throw new Error(`${providerId} account login is available, but workspace file tools require a tool-capable API connection. Configure its API key (or use an AgentMesh account adapter that exposes tool calls) for file-writing tasks.`);
+      throw new Error(`${providerId} account login is available, but AgentMesh workspace tools require an API key. For plain chat, AgentMesh can use your signed-in provider CLI. To use AgentMesh's built-in workspace tools, set ${providerId === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} or disable workspace tools.`);
     }
-    throw new Error(`${providerId} account mode is not available. Run \`agentmesh auth\` to check authentication, or configure that provider's API key for workspace file tools.`);
+    throw new Error(`${providerId} account mode is not available. Run `agentmesh auth` to check authentication, or configure that provider's API key for workspace tools.`);
   }
 
   const retries = options.retries ?? 1;
